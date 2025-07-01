@@ -11,19 +11,19 @@ const genAI = new GoogleGenerativeAI(API_KEY);
 // Model configurations for different tasks
 export const MODELS = {
   // Best for creative content generation (stories, poems, explanations)
-  CONTENT_GENERATION: 'gemini-1.5-pro-latest',
+  CONTENT_GENERATION: 'gemini-2.0-flash',
   
   // Best for multimodal tasks (image to text, worksheet generation)
-  MULTIMODAL: 'gemini-1.5-pro-vision-latest',
+  MULTIMODAL: 'gemini-2.5-pro-vision-latest',
   
   // Fast model for chat and quick responses
-  CHAT: 'gemini-1.5-flash-latest',
+  CHAT: 'gemini-2.0-flash',
   
   // Best for structured outputs (lesson plans, assessments)
-  STRUCTURED: 'gemini-1.5-pro-latest',
+  STRUCTURED: 'gemini-2.0-flash',
   
   // For code generation and technical content
-  CODE: 'gemini-1.5-pro-latest'
+  CODE: 'gemini-2.0-flash'
 } as const;
 
 // Content Generation Service
