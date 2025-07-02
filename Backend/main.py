@@ -12,6 +12,10 @@ import json
 from pathlib import Path
 import logging
 import requests
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -58,17 +62,17 @@ worksheets_dataset = load_dataset("worksheets.csv",
                                 ['content_type', 'grade', 'difficulty', 'example_questions', 'topic'])
 chat_dataset = load_dataset("askanything.csv",
                           ['language', 'question', 'response'])
-reading_assessments_dataset = load_dataset("reading_assessments.csv",
+reading_assessments_dataset = load_dataset("assessments.csv",
                                          ['grade', 'passage_title', 'passage_text', 'duration_seconds',
                                           'word_count', 'words_per_minute', 'accuracy', 'fluency', 'feedback'])
 visual_aids_dataset = load_dataset("visualaids.csv",
                                  ['subject', 'type', 'prompt', 'example_description', 'example_image_prompt'])
 
 # Configure Gemini
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
 if not GEMINI_API_KEY:
-    logger.error("GEMINI_API_KEY environment variable not set")
-    raise ValueError("GEMINI_API_KEY environment variable not set")
+    logger.error("GOOGLE_API_KEY environment variable not set")
+    raise ValueError("GOOGLE_API_KEY environment variable not set")
 
 genai.configure(api_key=GEMINI_API_KEY)
 text_model = genai.GenerativeModel('gemini-2.0-flash')
@@ -780,4 +784,4 @@ async def get_visual_aid_suggestions():
 # ======================
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
