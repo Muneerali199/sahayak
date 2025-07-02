@@ -6,13 +6,21 @@ import google.generativeai as genai
 import os
 from datetime import datetime
 import uuid
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import base64
 import json
+from pathlib import Path
+from dotenv import load_dotenv
 
-app = FastAPI(title="EduAI Backend", 
-              description="API for AI-powered educational content generation",
-              version="1.0.0")
+load_dotenv()
+
+app = FastAPI(
+    title="EduAI Backend",
+    description="API for AI-powered educational content generation",
+    version="1.0.0",
+    docs_url="/api-docs",
+    redoc_url=None
+)
 
 # CORS configuration
 app.add_middleware(
@@ -23,26 +31,39 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Configuration
+DATA_DIR = Path("data")
+DATA_DIR.mkdir(exist_ok=True)
+
 # Load datasets
 try:
-    content_dataset = pd.read_csv("content_generator.csv")
-    lesson_plans_dataset = pd.read_csv("lesson_plans_dataset.csv")
-    worksheets_dataset = pd.read_csv("worksheets.csv")
-except FileNotFoundError as e:
-    print(f"Warning: Dataset file not found - {e}")
-    # Create empty DataFrames if files don't exist
+    content_dataset = pd.read_csv(DATA_DIR / "content_generator.csv")
+except FileNotFoundError:
     content_dataset = pd.DataFrame(columns=['content_type', 'language', 'grade', 'prompt', 'response'])
+
+try:
+    lesson_plans_dataset = pd.read_csv(DATA_DIR / "lesson_plans.csv")
+except FileNotFoundError:
     lesson_plans_dataset = pd.DataFrame(columns=['subject', 'grade', 'topic', 'duration', 'curriculum_context', 
                                                'objectives', 'activities', 'materials', 'assessment', 'homework'])
+
+try:
+    worksheets_dataset = pd.read_csv(DATA_DIR / "worksheets.csv")
+except FileNotFoundError:
     worksheets_dataset = pd.DataFrame(columns=['content_type', 'grade', 'difficulty', 'example_questions', 'topic'])
 
+try:
+    chat_dataset = pd.read_csv(DATA_DIR / "askanything.csv")
+except FileNotFoundError:
+    chat_dataset = pd.DataFrame(columns=['language', 'question', 'response'])
+
 # Configure Gemini
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
 if not GEMINI_API_KEY:
-    raise ValueError("GEMINI_API_KEY environment variable not set")
+    raise ValueError("GOOGLE_API_KEY environment variable not set")
 
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-2.0-flash')
+text_model = genai.GenerativeModel('gemini-2.0-flash')
 vision_model = genai.GenerativeModel('gemini-pro-vision')
 
 # ======================
@@ -64,6 +85,11 @@ class LessonPlanRequest(BaseModel):
 class WorksheetRequest(BaseModel):
     text_content: str
     subject: str
+
+class ChatRequest(BaseModel):
+    message: str
+    language: str
+    context: Optional[str] = None
 
 class GeneratedContent(BaseModel):
     id: str
@@ -92,10 +118,17 @@ class WorksheetSet(BaseModel):
     worksheets: List[Dict[str, Any]]
     timestamp: str
 
+class ChatMessage(BaseModel):
+    id: str
+    type: str  # 'user' or 'bot'
+    content: str
+    language: str
+    timestamp: str
+
 class HealthCheck(BaseModel):
     status: str
     gemini_ready: bool
-    datasets_loaded: bool
+    datasets_loaded: Dict[str, bool]
 
 # ======================
 # In-memory Storage
@@ -103,6 +136,7 @@ class HealthCheck(BaseModel):
 content_store = []
 lesson_plans_store = []
 worksheet_sets_store = []
+chat_history_store = []
 
 # ======================
 # Helper Functions
@@ -120,12 +154,12 @@ def safe_json_parse(json_str: str, default: Any = None):
     except (json.JSONDecodeError, TypeError):
         return default
 
-def generate_gemini_response(prompt: str, model_type: str = 'text'):
+def generate_gemini_response(prompt: Any, model_type: str = 'text'):
     """Generate response from Gemini with error handling"""
     try:
         if model_type == 'vision':
             return vision_model.generate_content(prompt)
-        return model.generate_content(prompt)
+        return text_model.generate_content(prompt)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gemini API error: {str(e)}")
 
@@ -141,7 +175,8 @@ async def health_check():
         "datasets_loaded": {
             "content": not content_dataset.empty,
             "lesson_plans": not lesson_plans_dataset.empty,
-            "worksheets": not worksheets_dataset.empty
+            "worksheets": not worksheets_dataset.empty,
+            "chat": not chat_dataset.empty
         }
     }
 
@@ -152,19 +187,17 @@ async def health_check():
 async def generate_content(request: GenerateRequest):
     """Generate educational content based on parameters"""
     try:
-        # Find similar content in dataset
         similar_content = content_dataset[
             (content_dataset['language'] == request.language) & 
             (content_dataset['grade'] == request.grade) &
             (content_dataset['content_type'] == request.content_type)
         ]
         
-        # Create context prompt
         context_prompt = f"""
         You are an educational content generator specializing in {request.language} for grade {request.grade}.
         Generate a {request.content_type} on the topic: {request.prompt}
         
-        Here are some examples of good content:
+        Examples of good content:
         {similar_content.to_dict('records') if not similar_content.empty else 'No examples found'}
         
         The content should be:
@@ -174,10 +207,8 @@ async def generate_content(request: GenerateRequest):
         - In proper {request.language} with correct grammar
         """
         
-        # Generate with Gemini
         response = generate_gemini_response(context_prompt)
         
-        # Store the generated content
         content_item = {
             "id": str(uuid.uuid4()),
             "type": request.content_type,
@@ -206,13 +237,11 @@ async def get_generated_content(limit: int = 10):
 async def generate_lesson_plan(request: LessonPlanRequest):
     """Generate a lesson plan based on parameters"""
     try:
-        # Find similar lesson plans in dataset
         similar_plans = lesson_plans_dataset[
             (lesson_plans_dataset['grade'] == request.grade) &
             (lesson_plans_dataset['subject'] == request.subject)
         ]
         
-        # Create context prompt
         context_prompt = f"""
         Generate a comprehensive lesson plan with these specifications:
         - Subject: {request.subject}
@@ -221,24 +250,20 @@ async def generate_lesson_plan(request: LessonPlanRequest):
         - Duration: {request.duration} minutes
         - Curriculum Context: {request.curriculum or 'Not specified'}
         
-        Here are some examples of good lesson plans:
+        Example lesson plans:
         {similar_plans.to_dict('records') if not similar_plans.empty else 'No examples found'}
         
-        The lesson plan should include:
-        1. Clear learning objectives (3-5 bullet points)
+        Include:
+        1. Learning objectives (3-5 bullet points)
         2. Engaging activities (3-5 items)
         3. Required materials list
         4. Assessment method
         5. Appropriate homework assignment
         
-        Return the response as a JSON object with these keys:
-        objectives, activities, materials, assessment, homework
+        Return as JSON with keys: objectives, activities, materials, assessment, homework
         """
         
-        # Generate with Gemini
         response = generate_gemini_response(context_prompt)
-        
-        # Parse the response
         plan_data = safe_json_parse(response.text, {
             "objectives": ["Objective 1", "Objective 2"],
             "activities": ["Activity 1", "Activity 2"],
@@ -247,7 +272,6 @@ async def generate_lesson_plan(request: LessonPlanRequest):
             "homework": "Worksheet or reflection"
         })
         
-        # Create the lesson plan
         lesson_plan = {
             "id": str(uuid.uuid4()),
             "subject": request.subject,
@@ -285,11 +309,9 @@ async def upload_and_process_image(file: UploadFile = File(...)):
         if not file.content_type.startswith('image/'):
             raise HTTPException(status_code=400, detail="Only image files are allowed")
         
-        # Read image file
         contents = await file.read()
         base64_image = base64.b64encode(contents).decode('utf-8')
         
-        # Extract text using Gemini Vision
         image_parts = [{
             "mime_type": file.content_type,
             "data": base64_image
@@ -301,7 +323,6 @@ async def upload_and_process_image(file: UploadFile = File(...)):
         response = generate_gemini_response([prompt, *image_parts], 'vision')
         extracted_text = response.text
         
-        # Generate worksheets
         worksheet_request = WorksheetRequest(
             text_content=extracted_text,
             subject="General"
@@ -326,25 +347,23 @@ async def generate_worksheets_from_text(request: WorksheetRequest):
 
 async def generate_worksheets(request: WorksheetRequest, base64_image: str = None):
     """Core worksheet generation logic"""
-    # Find similar worksheets in dataset
     similar_worksheets = worksheets_dataset[
         (worksheets_dataset['content_type'] == request.subject)
     ]
     
-    # Create context prompt
     context_prompt = f"""
-    Generate 3 worksheet variations (Easy, Medium, Hard) based on this content:
+    Generate 3 worksheet variations (Easy, Medium, Hard) based on:
     {request.text_content}
     
-    Here are some examples of good worksheets:
+    Example worksheets:
     {similar_worksheets.to_dict('records') if not similar_worksheets.empty else 'No examples found'}
     
-    For each worksheet, include:
+    For each worksheet include:
     - Grade level (Grade 1-5)
     - Difficulty level (Easy, Medium, Hard)
-    - 5-10 questions appropriate for that level
+    - 5-10 appropriate questions
     
-    Return the response as a JSON array with this structure:
+    Return as JSON array with structure:
     [
         {{
             "grade": "Grade X",
@@ -355,10 +374,7 @@ async def generate_worksheets(request: WorksheetRequest, base64_image: str = Non
     ]
     """
     
-    # Generate with Gemini
     response = generate_gemini_response(context_prompt)
-    
-    # Parse the response
     worksheets = safe_json_parse(response.text, [
         {
             "grade": "Grade 3",
@@ -377,7 +393,6 @@ async def generate_worksheets(request: WorksheetRequest, base64_image: str = Non
         }
     ])
     
-    # Create worksheet set
     worksheet_set = {
         "id": str(uuid.uuid4()),
         "original_image": base64_image if base64_image else "",
@@ -393,6 +408,68 @@ async def generate_worksheets(request: WorksheetRequest, base64_image: str = Non
 async def get_worksheet_sets(limit: int = 10):
     """Get generated worksheet sets"""
     return worksheet_sets_store[:limit]
+
+# ======================
+# Ask Anything Bot Endpoints
+# ======================
+@app.post("/chat/send", response_model=ChatMessage)
+async def send_chat_message(request: ChatRequest):
+    """Handle chat messages and generate responses"""
+    try:
+        user_message = {
+            "id": str(uuid.uuid4()),
+            "type": "user",
+            "content": request.message,
+            "language": request.language,
+            "timestamp": datetime.now().isoformat()
+        }
+        chat_history_store.append(user_message)
+        
+        similar_chats = chat_dataset[
+            (chat_dataset['language'] == request.language)
+        ].sample(3) if not chat_dataset.empty else []
+        
+        context_prompt = f"""
+        You are a friendly AI teaching assistant helping students in {request.language}.
+        The student asked: {request.message}
+        
+        Respond with:
+        - Simple, clear language for grade school students
+        - Concise but informative explanations
+        - Examples and analogies when helpful
+        - Proper {request.language} grammar
+        - Encouraging and positive tone
+        
+        Example good responses:
+        {similar_chats.to_dict('records') if not similar_chats.empty else 'No examples found'}
+        """
+        
+        response = generate_gemini_response(context_prompt)
+        
+        bot_message = {
+            "id": str(uuid.uuid4()),
+            "type": "bot",
+            "content": response.text,
+            "language": request.language,
+            "timestamp": datetime.now().isoformat()
+        }
+        chat_history_store.append(bot_message)
+        
+        return bot_message
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
+
+@app.get("/chat/history", response_model=List[ChatMessage])
+async def get_chat_history(limit: int = 20):
+    """Get chat history"""
+    return chat_history_store[-limit:] if chat_history_store else []
+
+@app.post("/chat/clear")
+async def clear_chat_history():
+    """Clear chat history"""
+    chat_history_store.clear()
+    return {"status": "success", "message": "Chat history cleared"}
 
 # ======================
 # Main Application
