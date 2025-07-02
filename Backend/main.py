@@ -11,8 +11,7 @@ import base64
 import json
 from pathlib import Path
 import logging
-from dotenv import load_dotenv
-load_dotenv()
+import requests
 
 # Configure logging
 logging.basicConfig(
@@ -59,15 +58,17 @@ worksheets_dataset = load_dataset("worksheets.csv",
                                 ['content_type', 'grade', 'difficulty', 'example_questions', 'topic'])
 chat_dataset = load_dataset("askanything.csv",
                           ['language', 'question', 'response'])
-reading_assessments_dataset = load_dataset("assessments.csv",
+reading_assessments_dataset = load_dataset("reading_assessments.csv",
                                          ['grade', 'passage_title', 'passage_text', 'duration_seconds',
                                           'word_count', 'words_per_minute', 'accuracy', 'fluency', 'feedback'])
+visual_aids_dataset = load_dataset("visualaids.csv",
+                                 ['subject', 'type', 'prompt', 'example_description', 'example_image_prompt'])
 
 # Configure Gemini
-GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
-    logger.error("GOOGLE_API_KEY environment variable not set")
-    raise ValueError("GOOGLE_API_KEY environment variable not set")
+    logger.error("GEMINI_API_KEY environment variable not set")
+    raise ValueError("GEMINI_API_KEY environment variable not set")
 
 genai.configure(api_key=GEMINI_API_KEY)
 text_model = genai.GenerativeModel('gemini-2.0-flash')
@@ -104,6 +105,11 @@ class ReadingAssessmentRequest(BaseModel):
     passage_title: str
     duration_seconds: int = Field(..., gt=0)
     word_count: int = Field(..., gt=0)
+
+class VisualAidRequest(BaseModel):
+    prompt: str
+    aid_type: str
+    subject: str
 
 class GeneratedContent(BaseModel):
     id: str
@@ -151,6 +157,14 @@ class ReadingAssessmentResult(BaseModel):
     feedback: List[str]
     timestamp: str
 
+class GeneratedVisualAid(BaseModel):
+    id: str
+    prompt: str
+    type: str
+    image_url: str
+    description: str
+    timestamp: str
+
 class HealthCheck(BaseModel):
     status: str
     gemini_ready: bool
@@ -165,6 +179,7 @@ lesson_plans_store = []
 worksheet_sets_store = []
 chat_history_store = []
 reading_assessments_store = []
+visual_aids_store = []
 
 # ======================
 # Helper Functions
@@ -202,6 +217,34 @@ def calculate_reading_metrics(duration: int, word_count: int) -> Tuple[float, fl
     fluency = min(100, max(65, 85 - (0.3 * max(0, words_per_minute - 50))))
     return round(words_per_minute, 1), round(accuracy, 1), round(fluency, 1)
 
+def get_placeholder_image(aid_type: str, subject: str) -> str:
+    """Get placeholder image URL based on type and subject"""
+    type_map = {
+        "diagram": "diagram",
+        "illustration": "illustration",
+        "chart": "chart",
+        "map": "map",
+        "timeline": "timeline",
+        "flowchart": "flowchart"
+    }
+    
+    subject_map = {
+        "science": "science",
+        "math": "math",
+        "social": "social+studies",
+        "language": "language+arts"
+    }
+    
+    base_url = "https://source.unsplash.com/random/600x400/?"
+    query = f"{type_map.get(aid_type, 'education')},{subject_map.get(subject, 'school')}"
+    
+    try:
+        # Get actual image URL from Unsplash (not just the redirect)
+        response = requests.head(f"{base_url}{query}", allow_redirects=True)
+        return response.url
+    except:
+        return f"{base_url}{query}"
+
 # ======================
 # API Endpoints
 # ======================
@@ -216,7 +259,8 @@ async def health_check():
             "lesson_plans": not lesson_plans_dataset.empty,
             "worksheets": not worksheets_dataset.empty,
             "chat": not chat_dataset.empty,
-            "reading_assessments": not reading_assessments_dataset.empty
+            "reading_assessments": not reading_assessments_dataset.empty,
+            "visual_aids": not visual_aids_dataset.empty
         },
         "version": "1.0.0"
     }
@@ -626,8 +670,114 @@ async def get_reading_passages():
     return passages
 
 # ======================
+# Visual Aid Designer Endpoints
+# ======================
+@app.post("/visual-aids/generate", response_model=GeneratedVisualAid)
+async def generate_visual_aid(request: VisualAidRequest):
+    """Generate educational visual aids"""
+    try:
+        # Find similar visual aids in dataset
+        similar_aids = visual_aids_dataset[
+            (visual_aids_dataset['subject'] == request.subject) &
+            (visual_aids_dataset['type'] == request.aid_type)
+        ].sample(2) if not visual_aids_dataset.empty else []
+        
+        # Generate description with Gemini
+        context_prompt = f"""
+        Create a detailed description for an educational {request.aid_type} about:
+        {request.prompt}
+        
+        The visual aid should be appropriate for {request.subject} instruction.
+        Provide clear instructions for creating this visual material.
+        
+        Examples of good descriptions:
+        {similar_aids['example_description'].tolist() if not similar_aids.empty else 'No examples found'}
+        """
+        
+        description_response = generate_gemini_response(context_prompt)
+        description = description_response.text
+        
+        # Generate image prompt
+        image_prompt_context = f"""
+        Create a detailed prompt for generating an image of:
+        {request.prompt}
+        
+        The image should be a {request.aid_type} for {request.subject} education.
+        Make it visually appealing and educationally effective.
+        
+        Example image prompts:
+        {similar_aids['example_image_prompt'].tolist() if not similar_aids.empty else 'No examples found'}
+        """
+        
+        image_prompt_response = generate_gemini_response(image_prompt_context)
+        image_prompt = image_prompt_response.text
+        
+        # Get placeholder image (in production, generate actual image)
+        image_url = get_placeholder_image(request.aid_type, request.subject)
+        
+        # Create visual aid record
+        visual_aid = {
+            "id": str(uuid.uuid4()),
+            "prompt": request.prompt,
+            "type": request.aid_type,
+            "image_url": image_url,
+            "description": description,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        visual_aids_store.insert(0, visual_aid)
+        return visual_aid
+        
+    except Exception as e:
+        logger.error(f"Visual aid generation failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Visual aid generation failed"
+        )
+
+@app.get("/visual-aids", response_model=List[GeneratedVisualAid])
+async def get_visual_aids(limit: int = 10):
+    """Get generated visual aids"""
+    return visual_aids_store[:limit]
+
+@app.get("/visual-aids/suggestions", response_model=Dict[str, Any])
+async def get_visual_aid_suggestions():
+    """Get visual aid suggestions by subject"""
+    suggestions = {
+        "science": [
+            "Human digestive system for grade 4",
+            "Plant parts and functions diagram",
+            "Food chain in forest ecosystem",
+            "Water cycle with simple labels",
+            "Types of weather conditions",
+        ],
+        "math": [
+            "Fraction comparison chart",
+            "Multiplication table visual",
+            "Geometric shapes and properties",
+            "Number line for addition",
+            "Clock reading practice chart",
+        ],
+        "social": [
+            "Indian map with states",
+            "Timeline of Indian freedom struggle",
+            "Community helpers chart",
+            "Types of transportation",
+            "Family tree template",
+        ],
+        "language": [
+            "Parts of speech chart",
+            "Vowels and consonants diagram",
+            "Story sequence template",
+            "Rhyming words visualization",
+            "Sentence structure diagram",
+        ]
+    }
+    return suggestions
+
+# ======================
 # Main Application
 # ======================
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)

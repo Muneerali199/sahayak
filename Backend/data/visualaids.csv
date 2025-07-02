@@ -1,0 +1,11 @@
+subject,type,prompt,example_description,example_image_prompt
+science,diagram,"Plant cell structure","A labeled diagram showing cell wall, nucleus, chloroplasts, and other organelles","Detailed scientific illustration of a plant cell with labels"
+math,chart,"Fraction comparison","Color-coded pie charts showing 1/2, 1/4, and 3/4 fractions","Visual comparison of fractions using colorful pie charts"
+social,map,"Indian states","Political map of India showing state boundaries and capitals","Clear map of India with state borders and capital markers"
+language,illustration,"Parts of speech","Cartoon characters representing nouns, verbs, adjectives","Fun illustration showing parts of speech as cartoon characters"
+science,timeline,"Human evolution","Timeline from Australopithecus to Homo sapiens","Simple evolutionary timeline with illustrations of different hominids"
+math,flowchart,"Math problem solving","Step-by-step flowchart for solving word problems","Colorful flowchart showing problem solving steps"
+social,illustration,"Community helpers","Various professions like doctor, teacher, farmer","Cheerful illustration showing different community helpers"
+science,diagram,"Water cycle","Evaporation, condensation, precipitation illustration","Detailed water cycle diagram with arrows and labels"
+math,chart,"Multiplication table","12x12 multiplication grid with color coding","Color-coded multiplication table for easy learning"
+language,map,"Story elements","Concept map connecting characters, setting, plot","Visual map showing relationships between story elements"
