@@ -1,0 +1,7 @@
+content_type,grade,difficulty,example_questions,topic
+math,Grade 1,Easy,"1. Count the apples: 🍎🍎🍎\n2. Add: 2 + 3 = __\n3. Circle the bigger number: 5 or 7","Basic Counting"
+math,Grade 2,Medium,"1. Solve: 15 - 7 = __\n2. Complete the pattern: 2, 4, 6, __\n3. How many sides does a triangle have?","Arithmetic"
+science,Grade 3,Easy,"1. Name two animals that live in water\n2. True/False: Plants need sunlight to grow\n3. Match the body parts to their functions","Animals and Plants"
+science,Grade 4,Hard,"1. Explain the water cycle in your own words\n2. What are the three states of matter?\n3. Design an experiment to show air has weight","States of Matter"
+hindi,Grade 1,Easy,"1. 'आम' का पहला अक्षर लिखो\n2. इनमें से फल को पहचानो: 🍎 🚗 🌳\n3. 'मम्मी' शब्द को दोबारा लिखो","Basic Hindi"
+english,Grade 5,Medium,"1. Identify the verb in: 'The dog barked loudly'\n2. Write the past tense of 'run'\n3. Write 3 adjectives to describe your school","Grammar"
