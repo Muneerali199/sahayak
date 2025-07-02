@@ -1,18 +1,25 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, status
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import pandas as pd
 import google.generativeai as genai
 import os
 from datetime import datetime
 import uuid
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import base64
 import json
 from pathlib import Path
+import logging
 from dotenv import load_dotenv
-
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="EduAI Backend",
@@ -36,30 +43,30 @@ DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
 
 # Load datasets
-try:
-    content_dataset = pd.read_csv(DATA_DIR / "content_generator.csv")
-except FileNotFoundError:
-    content_dataset = pd.DataFrame(columns=['content_type', 'language', 'grade', 'prompt', 'response'])
+def load_dataset(filename: str, default_columns: List[str]) -> pd.DataFrame:
+    try:
+        return pd.read_csv(DATA_DIR / filename)
+    except FileNotFoundError:
+        logger.warning(f"Dataset {filename} not found, using empty DataFrame")
+        return pd.DataFrame(columns=default_columns)
 
-try:
-    lesson_plans_dataset = pd.read_csv(DATA_DIR / "lesson_plans.csv")
-except FileNotFoundError:
-    lesson_plans_dataset = pd.DataFrame(columns=['subject', 'grade', 'topic', 'duration', 'curriculum_context', 
-                                               'objectives', 'activities', 'materials', 'assessment', 'homework'])
-
-try:
-    worksheets_dataset = pd.read_csv(DATA_DIR / "worksheets.csv")
-except FileNotFoundError:
-    worksheets_dataset = pd.DataFrame(columns=['content_type', 'grade', 'difficulty', 'example_questions', 'topic'])
-
-try:
-    chat_dataset = pd.read_csv(DATA_DIR / "askanything.csv")
-except FileNotFoundError:
-    chat_dataset = pd.DataFrame(columns=['language', 'question', 'response'])
+content_dataset = load_dataset("content_generator.csv", 
+                             ['content_type', 'language', 'grade', 'prompt', 'response'])
+lesson_plans_dataset = load_dataset("lesson_plans.csv",
+                                  ['subject', 'grade', 'topic', 'duration', 'curriculum_context',
+                                   'objectives', 'activities', 'materials', 'assessment', 'homework'])
+worksheets_dataset = load_dataset("worksheets.csv",
+                                ['content_type', 'grade', 'difficulty', 'example_questions', 'topic'])
+chat_dataset = load_dataset("askanything.csv",
+                          ['language', 'question', 'response'])
+reading_assessments_dataset = load_dataset("assessments.csv",
+                                         ['grade', 'passage_title', 'passage_text', 'duration_seconds',
+                                          'word_count', 'words_per_minute', 'accuracy', 'fluency', 'feedback'])
 
 # Configure Gemini
 GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
 if not GEMINI_API_KEY:
+    logger.error("GOOGLE_API_KEY environment variable not set")
     raise ValueError("GOOGLE_API_KEY environment variable not set")
 
 genai.configure(api_key=GEMINI_API_KEY)
@@ -79,7 +86,7 @@ class LessonPlanRequest(BaseModel):
     subject: str
     grade: str
     topic: str
-    duration: int
+    duration: int = Field(..., gt=0, le=120)
     curriculum: str
 
 class WorksheetRequest(BaseModel):
@@ -90,6 +97,13 @@ class ChatRequest(BaseModel):
     message: str
     language: str
     context: Optional[str] = None
+
+class ReadingAssessmentRequest(BaseModel):
+    student_name: str
+    grade: str
+    passage_title: str
+    duration_seconds: int = Field(..., gt=0)
+    word_count: int = Field(..., gt=0)
 
 class GeneratedContent(BaseModel):
     id: str
@@ -125,10 +139,23 @@ class ChatMessage(BaseModel):
     language: str
     timestamp: str
 
+class ReadingAssessmentResult(BaseModel):
+    id: str
+    student_name: str
+    grade: str
+    passage_title: str
+    duration_seconds: int
+    words_per_minute: float
+    accuracy: float
+    fluency: float
+    feedback: List[str]
+    timestamp: str
+
 class HealthCheck(BaseModel):
     status: str
     gemini_ready: bool
     datasets_loaded: Dict[str, bool]
+    version: str
 
 # ======================
 # In-memory Storage
@@ -137,6 +164,7 @@ content_store = []
 lesson_plans_store = []
 worksheet_sets_store = []
 chat_history_store = []
+reading_assessments_store = []
 
 # ======================
 # Helper Functions
@@ -154,14 +182,25 @@ def safe_json_parse(json_str: str, default: Any = None):
     except (json.JSONDecodeError, TypeError):
         return default
 
-def generate_gemini_response(prompt: Any, model_type: str = 'text'):
+def generate_gemini_response(prompt: Any, model_type: str = 'text') -> Any:
     """Generate response from Gemini with error handling"""
     try:
         if model_type == 'vision':
             return vision_model.generate_content(prompt)
         return text_model.generate_content(prompt)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Gemini API error: {str(e)}")
+        logger.error(f"Gemini API error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI service currently unavailable"
+        )
+
+def calculate_reading_metrics(duration: int, word_count: int) -> Tuple[float, float, float]:
+    """Calculate reading metrics based on duration and word count"""
+    words_per_minute = (word_count / duration) * 60
+    accuracy = min(100, max(70, 90 - (0.5 * max(0, words_per_minute - 45))))
+    fluency = min(100, max(65, 85 - (0.3 * max(0, words_per_minute - 50))))
+    return round(words_per_minute, 1), round(accuracy, 1), round(fluency, 1)
 
 # ======================
 # API Endpoints
@@ -176,8 +215,10 @@ async def health_check():
             "content": not content_dataset.empty,
             "lesson_plans": not lesson_plans_dataset.empty,
             "worksheets": not worksheets_dataset.empty,
-            "chat": not chat_dataset.empty
-        }
+            "chat": not chat_dataset.empty,
+            "reading_assessments": not reading_assessments_dataset.empty
+        },
+        "version": "1.0.0"
     }
 
 # ======================
@@ -223,7 +264,11 @@ async def generate_content(request: GenerateRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Content generation failed: {str(e)}")
+        logger.error(f"Content generation failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Content generation failed"
+        )
 
 @app.get("/content", response_model=List[GeneratedContent])
 async def get_generated_content(limit: int = 10):
@@ -292,7 +337,11 @@ async def generate_lesson_plan(request: LessonPlanRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Lesson plan generation failed: {str(e)}")
+        logger.error(f"Lesson plan generation failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Lesson plan generation failed"
+        )
 
 @app.get("/lesson-plans", response_model=List[LessonPlan])
 async def get_lesson_plans(limit: int = 10):
@@ -307,7 +356,10 @@ async def upload_and_process_image(file: UploadFile = File(...)):
     """Process uploaded image and generate worksheets"""
     try:
         if not file.content_type.startswith('image/'):
-            raise HTTPException(status_code=400, detail="Only image files are allowed")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only image files are allowed"
+            )
         
         contents = await file.read()
         base64_image = base64.b64encode(contents).decode('utf-8')
@@ -333,7 +385,11 @@ async def upload_and_process_image(file: UploadFile = File(...)):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Image processing failed: {str(e)}")
+        logger.error(f"Image processing failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Worksheet generation failed"
+        )
 
 @app.post("/worksheets/generate", response_model=WorksheetSet)
 async def generate_worksheets_from_text(request: WorksheetRequest):
@@ -343,7 +399,11 @@ async def generate_worksheets_from_text(request: WorksheetRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Worksheet generation failed: {str(e)}")
+        logger.error(f"Worksheet generation failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Worksheet generation failed"
+        )
 
 async def generate_worksheets(request: WorksheetRequest, base64_image: str = None):
     """Core worksheet generation logic"""
@@ -458,7 +518,11 @@ async def send_chat_message(request: ChatRequest):
         return bot_message
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
+        logger.error(f"Chat failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Chat service unavailable"
+        )
 
 @app.get("/chat/history", response_model=List[ChatMessage])
 async def get_chat_history(limit: int = 20):
@@ -470,6 +534,96 @@ async def clear_chat_history():
     """Clear chat history"""
     chat_history_store.clear()
     return {"status": "success", "message": "Chat history cleared"}
+
+# ======================
+# Reading Assessment Endpoints
+# ======================
+@app.post("/assessments/reading", response_model=ReadingAssessmentResult)
+async def create_reading_assessment(request: ReadingAssessmentRequest):
+    """Generate reading assessment results"""
+    try:
+        # Find similar assessments in dataset
+        similar_assessments = reading_assessments_dataset[
+            (reading_assessments_dataset['grade'] == request.grade)
+        ].sample(2) if not reading_assessments_dataset.empty else []
+        
+        # Calculate metrics
+        wpm, accuracy, fluency = calculate_reading_metrics(
+            request.duration_seconds, 
+            request.word_count
+        )
+        
+        # Generate feedback with Gemini
+        context_prompt = f"""
+        Generate constructive feedback for a {request.grade} student's reading assessment:
+        - Passage: {request.passage_title}
+        - Words per minute: {wpm} (ideal range for grade: 40-60)
+        - Accuracy: {accuracy}%
+        - Fluency: {fluency}%
+        
+        Provide 3-5 specific feedback points to help the student improve.
+        Focus on positive reinforcement and actionable suggestions.
+        
+        Example feedback from similar assessments:
+        {similar_assessments['feedback'].tolist() if not similar_assessments.empty else 'No examples found'}
+        """
+        
+        response = generate_gemini_response(context_prompt)
+        feedback = parse_string_list(response.text)
+        
+        # Create assessment record
+        assessment = {
+            "id": str(uuid.uuid4()),
+            "student_name": request.student_name,
+            "grade": request.grade,
+            "passage_title": request.passage_title,
+            "duration_seconds": request.duration_seconds,
+            "words_per_minute": wpm,
+            "accuracy": accuracy,
+            "fluency": fluency,
+            "feedback": feedback,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        reading_assessments_store.insert(0, assessment)
+        return assessment
+        
+    except Exception as e:
+        logger.error(f"Reading assessment failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Reading assessment failed"
+        )
+
+@app.get("/assessments/reading", response_model=List[ReadingAssessmentResult])
+async def get_reading_assessments(limit: int = 10):
+    """Get reading assessment history"""
+    return reading_assessments_store[:limit]
+
+@app.get("/assessments/reading/passages", response_model=Dict[str, Any])
+async def get_reading_passages():
+    """Get available reading passages"""
+    passages = {
+        "passage1": {
+            "title": "The Cat and the Mouse",
+            "grade": "Grade 2-3",
+            "text": "Once upon a time, there lived a clever mouse...",
+            "word_count": 98
+        },
+        "passage2": {
+            "title": "The Magic Garden",
+            "grade": "Grade 3-4",
+            "text": "In a small village, there was a special garden...",
+            "word_count": 142
+        },
+        "passage3": {
+            "title": "The Honest Woodcutter",
+            "grade": "Grade 4-5",
+            "text": "Deep in the forest lived an honest woodcutter...",
+            "word_count": 198
+        }
+    }
+    return passages
 
 # ======================
 # Main Application

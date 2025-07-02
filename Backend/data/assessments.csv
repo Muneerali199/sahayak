@@ -1,0 +1,6 @@
+grade,passage_title,passage_text,duration_seconds,word_count,words_per_minute,accuracy,fluency,feedback
+"Grade 2","The Cat and the Mouse","Once upon a time, there lived a clever mouse...",120,98,49,85,78,"Good pace but some word mispronunciations, Try to read more smoothly"
+"Grade 3","The Magic Garden","In a small village, there was a special garden...",180,142,47,92,85,"Excellent accuracy, Could work on reading speed"
+"Grade 4","The Honest Woodcutter","Deep in the forest lived an honest woodcutter...",240,198,50,88,82,"Good overall, Watch punctuation pauses"
+"Grade 2","The Cat and the Mouse","Once upon a time, there lived a clever mouse...",150,98,39,78,70,"Needs practice with difficult words, Slow but steady"
+"Grade 3","The Magic Garden","In a small village, there was a special garden...",160,142,53,95,88,"Excellent reading skills!"
