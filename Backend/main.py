@@ -1,5 +1,6 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File, status
+from fastapi import FastAPI, HTTPException, UploadFile, File, status, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 import pandas as pd
 import google.generativeai as genai
@@ -41,14 +42,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Error handling middleware
+@app.middleware("http")
+async def catch_exceptions_middleware(request: Request, call_next):
+    try:
+        return await call_next(request)
+    except Exception as e:
+        logger.error(f"Unhandled exception: {str(e)}")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": "Internal server error"}
+        )
+
 # Configuration
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
 
-# Load datasets
+# Load datasets with improved safety
 def load_dataset(filename: str, default_columns: List[str]) -> pd.DataFrame:
     try:
-        return pd.read_csv(DATA_DIR / filename)
+        df = pd.read_csv(DATA_DIR / filename)
+        # Ensure all default columns exist
+        for col in default_columns:
+            if col not in df.columns:
+                df[col] = None
+        return df
     except FileNotFoundError:
         logger.warning(f"Dataset {filename} not found, using empty DataFrame")
         return pd.DataFrame(columns=default_columns)
@@ -76,7 +94,7 @@ if not GEMINI_API_KEY:
 
 genai.configure(api_key=GEMINI_API_KEY)
 text_model = genai.GenerativeModel('gemini-2.0-flash')
-vision_model = genai.GenerativeModel('gemini-pro-vision')
+vision_model = genai.GenerativeModel('gemini-2.0-flash-vision')
 
 # ======================
 # Pydantic Models
@@ -255,19 +273,34 @@ def get_placeholder_image(aid_type: str, subject: str) -> str:
 @app.get("/health", response_model=HealthCheck)
 async def health_check():
     """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "gemini_ready": GEMINI_API_KEY is not None,
-        "datasets_loaded": {
-            "content": not content_dataset.empty,
-            "lesson_plans": not lesson_plans_dataset.empty,
-            "worksheets": not worksheets_dataset.empty,
-            "chat": not chat_dataset.empty,
-            "reading_assessments": not reading_assessments_dataset.empty,
-            "visual_aids": not visual_aids_dataset.empty
-        },
-        "version": "1.0.0"
-    }
+    try:
+        # Test Gemini connection
+        test_prompt = "Test connection"
+        try:
+            generate_gemini_response(test_prompt)
+            gemini_ready = True
+        except:
+            gemini_ready = False
+            
+        return {
+            "status": "healthy",
+            "gemini_ready": gemini_ready,
+            "datasets_loaded": {
+                "content": not content_dataset.empty,
+                "lesson_plans": not lesson_plans_dataset.empty,
+                "worksheets": not worksheets_dataset.empty,
+                "chat": not chat_dataset.empty,
+                "reading_assessments": not reading_assessments_dataset.empty,
+                "visual_aids": not visual_aids_dataset.empty
+            },
+            "version": "1.0.0"
+        }
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Health check failed"
+        )
 
 # ======================
 # Content Generator Endpoints
@@ -533,9 +566,15 @@ async def send_chat_message(request: ChatRequest):
         }
         chat_history_store.append(user_message)
         
-        similar_chats = chat_dataset[
-            (chat_dataset['language'] == request.language)
-        ].sample(3) if not chat_dataset.empty else []
+        # Get similar chats - fixed sampling issue
+        similar_chats = []
+        if not chat_dataset.empty:
+            similar_chats = chat_dataset[
+                (chat_dataset['language'] == request.language)
+            ]
+            # Take up to 3 samples without replacement
+            sample_size = min(3, len(similar_chats))
+            similar_chats = similar_chats.sample(sample_size).to_dict('records')
         
         context_prompt = f"""
         You are a friendly AI teaching assistant helping students in {request.language}.
@@ -549,7 +588,7 @@ async def send_chat_message(request: ChatRequest):
         - Encouraging and positive tone
         
         Example good responses:
-        {similar_chats.to_dict('records') if not similar_chats.empty else 'No examples found'}
+        {similar_chats if similar_chats else 'No examples found'}
         """
         
         response = generate_gemini_response(context_prompt)
@@ -590,10 +629,15 @@ async def clear_chat_history():
 async def create_reading_assessment(request: ReadingAssessmentRequest):
     """Generate reading assessment results"""
     try:
-        # Find similar assessments in dataset
-        similar_assessments = reading_assessments_dataset[
-            (reading_assessments_dataset['grade'] == request.grade)
-        ].sample(2) if not reading_assessments_dataset.empty else []
+        # Find similar assessments in dataset - fixed sampling issue
+        similar_assessments = []
+        if not reading_assessments_dataset.empty:
+            similar_assessments = reading_assessments_dataset[
+                (reading_assessments_dataset['grade'] == request.grade)
+            ]
+            # Take up to 2 samples without replacement
+            sample_size = min(2, len(similar_assessments))
+            similar_assessments = similar_assessments.sample(sample_size)
         
         # Calculate metrics
         wpm, accuracy, fluency = calculate_reading_metrics(
@@ -680,11 +724,16 @@ async def get_reading_passages():
 async def generate_visual_aid(request: VisualAidRequest):
     """Generate educational visual aids"""
     try:
-        # Find similar visual aids in dataset
-        similar_aids = visual_aids_dataset[
-            (visual_aids_dataset['subject'] == request.subject) &
-            (visual_aids_dataset['type'] == request.aid_type)
-        ].sample(2) if not visual_aids_dataset.empty else []
+        # Find similar visual aids in dataset - fixed sampling issue
+        similar_aids = []
+        if not visual_aids_dataset.empty:
+            similar_aids = visual_aids_dataset[
+                (visual_aids_dataset['subject'] == request.subject) &
+                (visual_aids_dataset['type'] == request.aid_type)
+            ]
+            # Take up to 2 samples without replacement
+            sample_size = min(2, len(similar_aids))
+            similar_aids = similar_aids.sample(sample_size)
         
         # Generate description with Gemini
         context_prompt = f"""
