@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Mic, MicOff, Play, Pause, RotateCcw, FileText, TrendingUp } from 'lucide-react';
+import { Mic, MicOff, Play, Pause, RotateCcw, FileText, TrendingUp, ChevronDown, Clock } from 'lucide-react';
 import { assessmentService } from '../services/geminiService';
 
 interface AssessmentResult {
@@ -133,27 +133,27 @@ Ram thanked the fairy and returned home with the three axes. His honesty had bee
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8">
+    <div className="max-w-6xl mx-auto p-6 space-y-8">
       {/* Header */}
       <div className="text-center">
-        <h1 className="text-3xl font-bold text-gray-900 mb-4">
+        <h1 className="text-4xl font-bold text-indigo-800 mb-4">
           Reading Fluency Assessment
         </h1>
-        <p className="text-lg text-gray-600">
+        <p className="text-xl text-gray-600 max-w-3xl mx-auto">
           AI-powered assessment tool with Gemini to evaluate student reading skills
         </p>
       </div>
 
       {/* Assessment Setup */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-6">New Assessment</h2>
+      <div className="bg-white rounded-2xl shadow-md border border-gray-200 p-8">
+        <h2 className="text-2xl font-semibold text-gray-900 mb-8">New Assessment</h2>
         
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Left Column - Setup */}
           <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-3">
                   Student Name
                 </label>
                 <input
@@ -161,47 +161,57 @@ Ram thanked the fairy and returned home with the three axes. His honesty had bee
                   value={studentName}
                   onChange={(e) => setStudentName(e.target.value)}
                   placeholder="Enter student name"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-3">
                   Grade Level
                 </label>
-                <select
-                  value={studentGrade}
-                  onChange={(e) => setStudentGrade(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select Grade</option>
-                  <option value="Grade 1">Grade 1</option>
-                  <option value="Grade 2">Grade 2</option>
-                  <option value="Grade 3">Grade 3</option>
-                  <option value="Grade 4">Grade 4</option>
-                  <option value="Grade 5">Grade 5</option>
-                </select>
+                <div className="relative">
+                  <select
+                    value={studentGrade}
+                    onChange={(e) => setStudentGrade(e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 appearance-none"
+                  >
+                    <option value="">Select Grade</option>
+                    <option value="Grade 1">Grade 1</option>
+                    <option value="Grade 2">Grade 2</option>
+                    <option value="Grade 3">Grade 3</option>
+                    <option value="Grade 4">Grade 4</option>
+                    <option value="Grade 5">Grade 5</option>
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                </div>
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-3">
                 Reading Passage
               </label>
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {Object.entries(readingTexts).map(([key, passage]) => (
-                  <label key={key} className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
+                  <label 
+                    key={key} 
+                    className={`flex items-start space-x-4 p-4 border rounded-xl transition-all duration-200 cursor-pointer ${
+                      selectedText === key 
+                        ? 'border-indigo-500 bg-indigo-50 shadow-sm' 
+                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
                     <input
                       type="radio"
                       name="passage"
                       value={key}
                       checked={selectedText === key}
                       onChange={(e) => setSelectedText(e.target.value)}
-                      className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+                      className="mt-1 w-4 h-4 text-indigo-600 focus:ring-indigo-500"
                     />
                     <div>
                       <div className="font-medium text-gray-900">{passage.title}</div>
-                      <div className="text-sm text-gray-600">{passage.grade}</div>
+                      <div className="text-sm text-gray-600 mt-1">{passage.grade}</div>
                     </div>
                   </label>
                 ))}
@@ -210,38 +220,42 @@ Ram thanked the fairy and returned home with the three axes. His honesty had bee
 
             {/* Recording Controls */}
             <div className="border-t border-gray-200 pt-6">
-              <div className="flex items-center justify-center space-x-4">
+              <div className="flex flex-col items-center space-y-4">
                 {!isRecording ? (
                   <button
                     onClick={startRecording}
                     disabled={!studentName || !studentGrade || isAnalyzing}
-                    className="flex items-center space-x-2 px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+                    className={`flex items-center space-x-3 px-8 py-4 rounded-xl text-white ${
+                      !studentName || !studentGrade || isAnalyzing 
+                        ? 'bg-gray-400 cursor-not-allowed' 
+                        : 'bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-700 hover:to-pink-700'
+                    } transition-colors duration-200 shadow-md`}
                   >
-                    <Mic className="w-5 h-5" />
-                    <span>Start Recording</span>
+                    <Mic className="w-6 h-6" />
+                    <span className="font-medium">Start Recording</span>
                   </button>
                 ) : (
                   <button
                     onClick={stopRecording}
-                    className="flex items-center space-x-2 px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors duration-200"
+                    className="flex items-center space-x-3 px-8 py-4 bg-gray-700 text-white rounded-xl hover:bg-gray-800 transition-colors duration-200 shadow-md"
                   >
-                    <MicOff className="w-5 h-5" />
-                    <span>Stop Recording</span>
+                    <MicOff className="w-6 h-6" />
+                    <span className="font-medium">Stop Recording</span>
                   </button>
                 )}
                 
                 {recordingTime > 0 && (
-                  <div className="flex items-center space-x-2 text-lg font-mono">
-                    <div className={`w-3 h-3 rounded-full ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-gray-400'}`}></div>
+                  <div className="flex items-center space-x-3 text-lg font-mono bg-gray-100 px-4 py-2 rounded-full">
+                    <div className={`w-3 h-3 rounded-full ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-gray-500'}`}></div>
                     <span>{formatTime(recordingTime)}</span>
                   </div>
                 )}
               </div>
               
               {isAnalyzing && (
-                <div className="mt-4 text-center">
-                  <div className="animate-spin mx-auto w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
-                  <p className="mt-2 text-sm text-gray-600">Analyzing with Gemini AI...</p>
+                <div className="mt-6 text-center">
+                  <div className="animate-spin mx-auto w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full"></div>
+                  <p className="mt-3 text-sm text-gray-600">Analyzing with Gemini AI...</p>
                 </div>
               )}
             </div>
@@ -249,12 +263,17 @@ Ram thanked the fairy and returned home with the three axes. His honesty had bee
 
           {/* Right Column - Text Preview */}
           <div className="space-y-4">
-            <div className="bg-gray-50 rounded-lg p-4">
-              <h3 className="font-medium text-gray-900 mb-2">
+            <div className="bg-gray-50 rounded-xl p-6 border border-gray-200 h-full">
+              <h3 className="font-semibold text-gray-900 mb-4 text-lg">
                 {readingTexts[selectedText as keyof typeof readingTexts].title}
+                <span className="ml-2 text-sm font-normal text-gray-500">
+                  ({readingTexts[selectedText as keyof typeof readingTexts].grade})
+                </span>
               </h3>
-              <div className="text-sm text-gray-700 leading-relaxed max-h-80 overflow-y-auto">
-                {readingTexts[selectedText as keyof typeof readingTexts].text}
+              <div className="text-gray-700 leading-relaxed max-h-[400px] overflow-y-auto p-2">
+                {readingTexts[selectedText as keyof typeof readingTexts].text.split('\n').map((paragraph, index) => (
+                  <p key={index} className="mb-4">{paragraph}</p>
+                ))}
               </div>
             </div>
           </div>
@@ -263,64 +282,95 @@ Ram thanked the fairy and returned home with the three axes. His honesty had bee
 
       {/* Assessment Results */}
       <div className="space-y-6">
-        <h2 className="text-2xl font-semibold text-gray-900">Assessment Results</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-semibold text-gray-900">Assessment Results</h2>
+          {assessmentResults.length > 0 && (
+            <span className="text-sm text-gray-500">
+              {assessmentResults.length} {assessmentResults.length === 1 ? 'assessment' : 'assessments'}
+            </span>
+          )}
+        </div>
         
         {assessmentResults.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
-            <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-500">No assessments completed yet. Start your first assessment above!</p>
+          <div className="text-center py-16 bg-white rounded-2xl border border-gray-200 shadow-sm">
+            <div className="mx-auto h-24 w-24 rounded-full bg-indigo-50 flex items-center justify-center mb-6">
+              <FileText className="w-12 h-12 text-indigo-600" />
+            </div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No assessments completed yet</h3>
+            <p className="text-gray-500 max-w-md mx-auto">
+              Start your first assessment to evaluate student reading skills
+            </p>
           </div>
         ) : (
           <div className="space-y-6">
             {assessmentResults.map((result) => (
-              <div key={result.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <div className="flex items-start justify-between mb-6">
-                  <div>
-                    <h3 className="text-xl font-semibold text-gray-900">{result.studentName}</h3>
-                    <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
-                      <span>{result.grade}</span>
-                      <span>•</span>
-                      <span>{result.text}</span>
-                      <span>•</span>
-                      <span>{result.timestamp.toLocaleDateString()}</span>
+              <div key={result.id} className="bg-white rounded-2xl shadow-md border border-gray-200 overflow-hidden">
+                <div className="p-6 border-b border-gray-200 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                  <div className="flex items-start gap-4">
+                    <div className="flex-shrink-0">
+                      <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center">
+                        <FileText className="w-6 h-6 text-indigo-600" />
+                      </div>
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-semibold text-gray-900">{result.studentName}</h3>
+                      <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600 mt-2">
+                        <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full">
+                          {result.grade}
+                        </span>
+                        <span className="px-3 py-1 bg-green-50 text-green-700 rounded-full">
+                          {result.text}
+                        </span>
+                        <span className="flex items-center space-x-1 px-3 py-1 bg-gray-100 text-gray-700 rounded-full">
+                          <Clock className="w-4 h-4" />
+                          <span>{formatTime(result.duration)}</span>
+                        </span>
+                      </div>
                     </div>
                   </div>
                   
-                  <div className="text-right">
-                    <div className="text-sm text-gray-600">Duration</div>
-                    <div className="text-lg font-semibold text-gray-900">{formatTime(result.duration)}</div>
+                  <div className="text-sm text-gray-500">
+                    {result.timestamp.toLocaleDateString([], { 
+                      month: 'short', 
+                      day: 'numeric', 
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
                   </div>
                 </div>
 
                 {/* Metrics */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                  <div className="text-center p-4 bg-blue-50 rounded-lg">
-                    <div className="text-2xl font-bold text-blue-600">{result.wordsPerMinute}</div>
-                    <div className="text-sm text-gray-600">Words per Minute</div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6">
+                  <div className="text-center p-4 bg-blue-50 rounded-xl border border-blue-100">
+                    <div className="text-3xl font-bold text-blue-600">{result.wordsPerMinute}</div>
+                    <div className="text-sm font-medium text-gray-600 mt-1">Words per Minute</div>
                   </div>
                   
-                  <div className="text-center p-4 bg-green-50 rounded-lg">
-                    <div className="text-2xl font-bold text-green-600">{result.accuracy}%</div>
-                    <div className="text-sm text-gray-600">Accuracy</div>
+                  <div className="text-center p-4 bg-green-50 rounded-xl border border-green-100">
+                    <div className="text-3xl font-bold text-green-600">{result.accuracy}%</div>
+                    <div className="text-sm font-medium text-gray-600 mt-1">Accuracy</div>
                   </div>
                   
-                  <div className="text-center p-4 bg-purple-50 rounded-lg">
-                    <div className="text-2xl font-bold text-purple-600">{result.fluency}%</div>
-                    <div className="text-sm text-gray-600">Fluency</div>
+                  <div className="text-center p-4 bg-purple-50 rounded-xl border border-purple-100">
+                    <div className="text-3xl font-bold text-purple-600">{result.fluency}%</div>
+                    <div className="text-sm font-medium text-gray-600 mt-1">Fluency</div>
                   </div>
                 </div>
 
                 {/* Feedback */}
-                <div>
-                  <h4 className="font-medium text-gray-900 mb-3 flex items-center space-x-2">
-                    <TrendingUp className="w-4 h-4" />
+                <div className="p-6 pt-0">
+                  <h4 className="font-semibold text-gray-900 mb-4 flex items-center space-x-3">
+                    <div className="p-2 bg-indigo-100 rounded-lg">
+                      <TrendingUp className="w-5 h-5 text-indigo-600" />
+                    </div>
                     <span>Gemini AI Feedback</span>
                   </h4>
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {result.feedback.map((item, index) => (
-                      <div key={index} className="flex items-start space-x-2">
-                        <div className="w-1.5 h-1.5 bg-blue-600 rounded-full mt-2 flex-shrink-0"></div>
-                        <p className="text-sm text-gray-700">{item}</p>
+                      <div key={index} className="flex items-start space-x-3 bg-gray-50 p-4 rounded-lg">
+                        <div className="w-2 h-2 bg-indigo-600 rounded-full mt-2 flex-shrink-0"></div>
+                        <p className="text-gray-700">{item}</p>
                       </div>
                     ))}
                   </div>

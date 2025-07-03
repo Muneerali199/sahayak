@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Volume2, Globe } from 'lucide-react';
+import { Send, Bot, User, Volume2, Globe, ChevronDown } from 'lucide-react';
 import { chatService } from '../services/geminiService';
 
 interface Message {
@@ -98,127 +98,130 @@ export function AskAnythingBot() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto h-screen flex flex-col">
+    <div className="max-w-4xl mx-auto h-screen flex flex-col bg-gray-50">
       {/* Header */}
-      <div className="bg-white rounded-t-xl shadow-sm border border-gray-200 border-b-0 p-6">
+      <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 rounded-t-2xl shadow-sm">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Ask Anything Bot</h1>
-            <p className="text-gray-600">Your AI teaching assistant powered by Gemini</p>
+            <h1 className="text-2xl font-bold text-white mb-1">Ask Anything Bot</h1>
+            <p className="text-indigo-100">Your AI teaching assistant powered by Gemini</p>
           </div>
           
-          <div className="flex items-center space-x-3">
-            <div className="flex items-center space-x-2">
-              <Globe className="w-4 h-4 text-gray-600" />
+          <div className="relative">
+            <div className="flex items-center space-x-2 bg-white/20 backdrop-blur-sm rounded-lg px-3 py-1.5">
+              <Globe className="w-4 h-4 text-white" />
               <select
                 value={selectedLanguage}
                 onChange={(e) => setSelectedLanguage(e.target.value)}
-                className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="appearance-none bg-transparent text-white text-sm focus:outline-none pr-6"
               >
                 {languages.map(lang => (
-                  <option key={lang.code} value={lang.code}>
+                  <option key={lang.code} value={lang.code} className="text-gray-900">
                     {lang.flag} {lang.name}
                   </option>
                 ))}
               </select>
+              <ChevronDown className="w-4 h-4 text-white absolute right-3 pointer-events-none" />
             </div>
           </div>
         </div>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 bg-white border-l border-r border-gray-200 overflow-hidden">
-        <div className="h-full overflow-y-auto p-6 space-y-4">
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex items-start space-x-3 ${
-                message.type === 'user' ? 'flex-row-reverse space-x-reverse' : ''
-              }`}
-            >
-              <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-                message.type === 'user' 
-                  ? 'bg-blue-600 text-white' 
-                  : 'bg-gradient-to-r from-purple-500 to-pink-500 text-white'
+      <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-white">
+        {messages.map((message) => (
+          <div
+            key={message.id}
+            className={`flex items-start gap-3 ${
+              message.type === 'user' ? 'flex-row-reverse' : ''
+            }`}
+          >
+            <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center shadow-sm ${
+              message.type === 'user' 
+                ? 'bg-indigo-600 text-white' 
+                : 'bg-gradient-to-r from-purple-500 to-pink-500 text-white'
+            }`}>
+              {message.type === 'user' ? <User className="w-5 h-5" /> : <Bot className="w-5 h-5" />}
+            </div>
+            
+            <div className={`max-w-[80%] ${
+              message.type === 'user' ? 'text-right' : ''
+            }`}>
+              <div className={`inline-block p-4 rounded-2xl ${
+                message.type === 'user'
+                  ? 'bg-indigo-600 text-white shadow-indigo-100 shadow-md'
+                  : 'bg-gray-50 text-gray-800 border border-gray-100 shadow-sm'
               }`}>
-                {message.type === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+                <p className="whitespace-pre-wrap text-sm leading-relaxed">
+                  {message.content}
+                </p>
               </div>
               
-              <div className={`flex-1 max-w-xs sm:max-w-md lg:max-w-lg ${
-                message.type === 'user' ? 'text-right' : ''
+              <div className={`flex items-center mt-2 text-xs ${
+                message.type === 'user' ? 'justify-end text-indigo-400' : 'justify-start text-gray-400'
               }`}>
-                <div className={`inline-block p-4 rounded-2xl shadow-sm ${
-                  message.type === 'user'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-900'
-                }`}>
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                    {message.content}
-                  </p>
-                </div>
-                
-                <div className={`flex items-center space-x-2 mt-2 text-xs text-gray-500 ${
-                  message.type === 'user' ? 'justify-end' : 'justify-start'
-                }`}>
-                  <span>{message.timestamp.toLocaleTimeString()}</span>
-                  {message.type === 'bot' && (
-                    <button
-                      onClick={() => speakMessage(message.content)}
-                      className="p-1 hover:bg-gray-200 rounded-full transition-colors duration-200"
-                      title="Listen to message"
-                    >
-                      <Volume2 className="w-3 h-3" />
-                    </button>
-                  )}
-                </div>
+                <span>{message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                {message.type === 'bot' && (
+                  <button
+                    onClick={() => speakMessage(message.content)}
+                    className="ml-2 p-1 hover:bg-gray-100 rounded-full transition-colors duration-200"
+                    title="Listen to message"
+                  >
+                    <Volume2 className="w-3 h-3" />
+                  </button>
+                )}
               </div>
             </div>
-          ))}
-          
-          {isTyping && (
-            <div className="flex items-start space-x-3">
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-white flex items-center justify-center">
-                <Bot className="w-4 h-4" />
-              </div>
-              <div className="bg-gray-100 p-4 rounded-2xl">
-                <div className="flex space-x-1">
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                </div>
+          </div>
+        ))}
+        
+        {isTyping && (
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-white flex items-center justify-center shadow-sm">
+              <Bot className="w-5 h-5" />
+            </div>
+            <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
+              <div className="flex space-x-2">
+                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
               </div>
             </div>
-          )}
-          
-          <div ref={messagesEndRef} />
-        </div>
+          </div>
+        )}
+        
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Input */}
-      <div className="bg-white rounded-b-xl shadow-sm border border-gray-200 border-t-0 p-6">
-        <div className="flex space-x-3">
-          <div className="flex-1">
+      <div className="bg-white border-t border-gray-200 p-6 rounded-b-2xl shadow-sm">
+        <div className="flex gap-3">
+          <div className="flex-1 relative">
             <textarea
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyPress={handleKeyPress}
               placeholder="Ask me anything... (e.g., Why does it rain? How do plants grow?)"
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none pr-12"
               rows={1}
             />
+            <button
+              onClick={handleSend}
+              disabled={!inputMessage.trim() || isTyping}
+              className={`absolute right-3 bottom-3 p-2 rounded-full ${
+                inputMessage.trim() 
+                  ? 'bg-indigo-600 text-white hover:bg-indigo-700' 
+                  : 'bg-gray-200 text-gray-400'
+              } transition-colors duration-200`}
+            >
+              <Send className="w-4 h-4" />
+            </button>
           </div>
-          <button
-            onClick={handleSend}
-            disabled={!inputMessage.trim() || isTyping}
-            className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
-          >
-            <Send className="w-4 h-4" />
-          </button>
         </div>
         
         {/* Quick Questions */}
         <div className="mt-4">
-          <p className="text-sm text-gray-600 mb-2">Quick questions:</p>
+          <p className="text-xs font-medium text-gray-500 mb-2">TRY THESE QUESTIONS:</p>
           <div className="flex flex-wrap gap-2">
             {[
               'Why does it rain?',
@@ -229,7 +232,7 @@ export function AskAnythingBot() {
               <button
                 key={question}
                 onClick={() => setInputMessage(question)}
-                className="px-3 py-1 bg-gray-100 text-gray-700 text-xs rounded-full hover:bg-gray-200 transition-colors duration-200"
+                className="px-3 py-1.5 bg-indigo-50 text-indigo-600 text-xs font-medium rounded-lg hover:bg-indigo-100 transition-colors duration-200"
               >
                 {question}
               </button>

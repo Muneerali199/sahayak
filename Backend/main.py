@@ -93,8 +93,8 @@ if not GEMINI_API_KEY:
     raise ValueError("GOOGLE_API_KEY environment variable not set")
 
 genai.configure(api_key=GEMINI_API_KEY)
-text_model = genai.GenerativeModel('gemini-2.0-flash')
-vision_model = genai.GenerativeModel('gemini-2.0-flash-vision')
+text_model = genai.GenerativeModel('gemini-1.5-flash')
+vision_model = genai.GenerativeModel('gemini-pro-vision')
 
 # ======================
 # Pydantic Models
@@ -113,8 +113,8 @@ class LessonPlanRequest(BaseModel):
     curriculum: str
 
 class WorksheetRequest(BaseModel):
-    text_content: str
-    subject: str
+    text_content: str = Field(..., min_length=20, description="At least 20 characters of worksheet content")
+    subject: str = Field(..., pattern="^[a-zA-Z ]+$", description="Alphabetic characters only")
 
 class ChatRequest(BaseModel):
     message: str
@@ -153,11 +153,25 @@ class LessonPlan(BaseModel):
     homework: str
     date: str
 
-class WorksheetSet(BaseModel):
+class WorksheetQuestion(BaseModel):
+    text: str
+    type: str
+    options: Optional[List[str]] = None
+    answer: Optional[str] = None
+
+class WorksheetVariant(BaseModel):
+    grade: str
+    difficulty: str
+    instructions: str
+    questions: List[WorksheetQuestion]
+
+class EnhancedWorksheetSet(BaseModel):
     id: str
-    original_image: str
+    original_image: Optional[str] = None
     extracted_text: str
-    worksheets: List[Dict[str, Any]]
+    variants: List[WorksheetVariant]
+    subject: str
+    topic: Optional[str] = None
     timestamp: str
 
 class ChatMessage(BaseModel):
@@ -192,6 +206,7 @@ class HealthCheck(BaseModel):
     gemini_ready: bool
     datasets_loaded: Dict[str, bool]
     version: str
+    models: Dict[str, str]
 
 # ======================
 # In-memory Storage
@@ -223,6 +238,8 @@ def generate_gemini_response(prompt: Any, model_type: str = 'text') -> Any:
     """Generate response from Gemini with error handling"""
     try:
         if model_type == 'vision':
+            return vision_model.generate_content(prompt)
+        elif model_type == 'complex':
             return vision_model.generate_content(prompt)
         return text_model.generate_content(prompt)
     except Exception as e:
@@ -267,6 +284,56 @@ def get_placeholder_image(aid_type: str, subject: str) -> str:
     except:
         return f"{base_url}{query}"
 
+def create_fallback_worksheet(content: str) -> Dict:
+    """Create a basic worksheet when generation fails"""
+    return {
+        "variants": [
+            {
+                "grade": "Grade 3",
+                "difficulty": "Easy",
+                "instructions": "Answer the following questions",
+                "questions": [
+                    {
+                        "text": "What is the main idea of this content?",
+                        "type": "short_answer",
+                        "answer": "Various answers acceptable"
+                    },
+                    {
+                        "text": "Explain one key concept from this material",
+                        "type": "short_answer",
+                        "answer": "Various answers acceptable"
+                    }
+                ]
+            },
+            {
+                "grade": "Grade 4",
+                "difficulty": "Medium",
+                "instructions": "Complete the following exercises",
+                "questions": [
+                    {
+                        "text": "Summarize the key points in your own words",
+                        "type": "short_answer",
+                        "answer": "Various answers acceptable"
+                    }
+                ]
+            },
+            {
+                "grade": "Grade 5",
+                "difficulty": "Hard",
+                "instructions": "Analyze and respond to the following",
+                "questions": [
+                    {
+                        "text": "What are the implications of this content?",
+                        "type": "short_answer",
+                        "answer": "Various answers acceptable"
+                    }
+                ]
+            }
+        ],
+        "subject": "General",
+        "topic": "Fallback Worksheet"
+    }
+
 # ======================
 # API Endpoints
 # ======================
@@ -293,7 +360,11 @@ async def health_check():
                 "reading_assessments": not reading_assessments_dataset.empty,
                 "visual_aids": not visual_aids_dataset.empty
             },
-            "version": "1.0.0"
+            "version": "1.0.0",
+            "models": {
+                "text": "gemini-1.5-flash",
+                "vision": "gemini-1.5-pro-vision"
+            }
         }
     except Exception as e:
         logger.error(f"Health check failed: {str(e)}")
@@ -430,122 +501,173 @@ async def get_lesson_plans(limit: int = 10):
     return lesson_plans_store[:limit]
 
 # ======================
-# Worksheet Generator Endpoints
+# Enhanced Worksheet Generator Endpoints
 # ======================
-@app.post("/worksheets/upload", response_model=WorksheetSet)
-async def upload_and_process_image(file: UploadFile = File(...)):
-    """Process uploaded image and generate worksheets"""
+@app.post("/worksheets/upload", response_model=EnhancedWorksheetSet)
+async def upload_and_process_worksheet(file: UploadFile = File(...)):
+    """Process uploaded worksheet image with enhanced text extraction"""
     try:
+        # Validate input
         if not file.content_type.startswith('image/'):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Only image files are allowed"
+                detail="Only image files (JPEG, PNG) are supported"
             )
-        
+
+        # Process image
         contents = await file.read()
+        if len(contents) > 5 * 1024 * 1024:  # 5MB limit
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Image file too large (max 5MB)"
+            )
+
         base64_image = base64.b64encode(contents).decode('utf-8')
-        
-        image_parts = [{
-            "mime_type": file.content_type,
-            "data": base64_image
-        }]
-        
-        prompt = """Extract all text from this educational material image.
-        Return ONLY the extracted text with no additional commentary or formatting."""
-        
-        response = generate_gemini_response([prompt, *image_parts], 'vision')
+
+        # Enhanced text extraction prompt
+        extraction_prompt = """
+        Carefully extract ALL text from this educational worksheet image exactly as it appears.
+        Preserve:
+        - Original formatting (bullet points, numbering)
+        - Mathematical symbols and equations
+        - Question/answer groupings
+        - Headers and section titles
+        - Any special instructions
+
+        Return ONLY the raw extracted text with:
+        - No additional commentary
+        - No interpretation
+        - No modifications
+        - Maintain original line breaks where meaningful
+
+        For multiple choice questions, include:
+        - The question stem
+        - All options (A, B, C, etc.)
+        - The correct answer if visible
+        """
+
+        # Use vision model for better accuracy
+        response = generate_gemini_response(
+            [extraction_prompt, {"mime_type": file.content_type, "data": base64_image}],
+            model_type='vision'
+        )
         extracted_text = response.text
-        
-        worksheet_request = WorksheetRequest(
-            text_content=extracted_text,
-            subject="General"
+
+        # Validate extraction
+        if len(extracted_text.strip()) < 20:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Could not extract meaningful text from image. Please try a clearer image."
+            )
+
+        # Generate worksheets
+        return await generate_enhanced_worksheets(
+            WorksheetRequest(text_content=extracted_text, subject="General"),
+            base64_image
         )
-        
-        return await generate_worksheets(worksheet_request, base64_image)
-        
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Image processing failed: {str(e)}")
+        logger.error(f"Worksheet processing failed: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Worksheet generation failed"
+            detail="Worksheet processing failed. Please try again."
         )
 
-@app.post("/worksheets/generate", response_model=WorksheetSet)
-async def generate_worksheets_from_text(request: WorksheetRequest):
-    """Generate worksheets from text content"""
+@app.post("/worksheets/generate", response_model=EnhancedWorksheetSet)
+async def generate_enhanced_worksheets_from_text(request: WorksheetRequest):
+    """Generate enhanced worksheets from text content"""
     try:
-        return await generate_worksheets(request)
+        return await generate_enhanced_worksheets(request)
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Worksheet generation failed: {str(e)}")
+        logger.error(f"Worksheet generation failed: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Worksheet generation failed"
+            detail="Failed to generate worksheets from text"
         )
 
-async def generate_worksheets(request: WorksheetRequest, base64_image: str = None):
-    """Core worksheet generation logic"""
+async def generate_enhanced_worksheets(request: WorksheetRequest, base64_image: str = None):
+    """Core enhanced worksheet generation logic"""
+    # Get similar worksheets for context
     similar_worksheets = worksheets_dataset[
         (worksheets_dataset['content_type'] == request.subject)
-    ]
-    
-    context_prompt = f"""
-    Generate 3 worksheet variations (Easy, Medium, Hard) based on:
-    {request.text_content}
-    
-    Example worksheets:
-    {similar_worksheets.to_dict('records') if not similar_worksheets.empty else 'No examples found'}
-    
-    For each worksheet include:
-    - Grade level (Grade 1-5)
-    - Difficulty level (Easy, Medium, Hard)
-    - 5-10 appropriate questions
-    
-    Return as JSON array with structure:
-    [
-        {{
-            "grade": "Grade X",
-            "difficulty": "Easy/Medium/Hard",
-            "questions": ["q1", "q2", ...]
-        }},
-        ...
-    ]
-    """
-    
-    response = generate_gemini_response(context_prompt)
-    worksheets = safe_json_parse(response.text, [
-        {
-            "grade": "Grade 3",
-            "difficulty": "Easy",
-            "questions": ["Sample question 1", "Sample question 2"]
-        },
-        {
-            "grade": "Grade 4", 
-            "difficulty": "Medium",
-            "questions": ["Sample question 1", "Sample question 2"]
-        },
-        {
-            "grade": "Grade 5",
-            "difficulty": "Hard",
-            "questions": ["Sample question 1", "Sample question 2"]
-        }
-    ])
-    
-    worksheet_set = {
-        "id": str(uuid.uuid4()),
-        "original_image": base64_image if base64_image else "",
-        "extracted_text": request.text_content,
-        "worksheets": worksheets,
-        "timestamp": datetime.now().isoformat()
-    }
-    
-    worksheet_sets_store.insert(0, worksheet_set)
-    return worksheet_set
+    ].to_dict('records')[:3]  # Limit to 3 examples
 
-@app.get("/worksheets", response_model=List[WorksheetSet])
+    # Enhanced generation prompt
+    generation_prompt = f"""
+    Generate 3 high-quality worksheet variations (Easy, Medium, Hard) based on this content:
+    {request.text_content}
+
+    Examples of good worksheets (for reference only):
+    {similar_worksheets if similar_worksheets else 'No examples available'}
+
+    For EACH variation, provide:
+    1. Appropriate grade level (1-5)
+    2. Clear difficulty label
+    3. Specific learning objectives
+    4. 5-10 pedagogically sound questions including:
+       - Multiple choice
+       - Short answer
+       - Problem-solving
+    5. Answer key where applicable
+
+    Required JSON structure:
+    {{
+        "variants": [
+            {{
+                "grade": "Grade X",
+                "difficulty": "Easy/Medium/Hard",
+                "instructions": "...",
+                "questions": [
+                    {{
+                        "text": "Question text",
+                        "type": "multiple_choice/short_answer/etc",
+                        "options": ["A", "B", "C"] (only for multiple choice),
+                        "answer": "Correct answer"
+                    }},
+                    ...
+                ]
+            }},
+            {{...}}  # Medium variant
+            {{...}}  # Hard variant
+        ],
+        "subject": "{request.subject}",
+        "topic": "Generated topic based on content"
+    }}
+    """
+
+    try:
+        # Generate with more reliable model
+        response = generate_gemini_response(generation_prompt, model_type='complex')
+        worksheet_data = safe_json_parse(response.text)
+
+        # Validate and normalize response
+        if not worksheet_data or 'variants' not in worksheet_data:
+            logger.warning(f"Invalid worksheet structure: {response.text}")
+            worksheet_data = create_fallback_worksheet(request.text_content)
+
+        # Create structured response
+        worksheet_set = {
+            "id": str(uuid.uuid4()),
+            "original_image": base64_image,
+            "extracted_text": request.text_content,
+            "variants": worksheet_data.get('variants', []),
+            "subject": request.subject,
+            "topic": worksheet_data.get('topic', 'General'),
+            "timestamp": datetime.now().isoformat()
+        }
+
+        worksheet_sets_store.insert(0, worksheet_set)
+        return worksheet_set
+
+    except Exception as e:
+        logger.error(f"Worksheet generation failed: {str(e)}")
+        return create_fallback_worksheet(request.text_content)
+
+@app.get("/worksheets", response_model=List[EnhancedWorksheetSet])
 async def get_worksheet_sets(limit: int = 10):
     """Get generated worksheet sets"""
     return worksheet_sets_store[:limit]

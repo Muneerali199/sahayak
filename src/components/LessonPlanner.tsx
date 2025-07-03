@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Calendar, Plus, Clock, BookOpen, Target, Users, Wand2 } from 'lucide-react';
+import { Calendar, Plus, Clock, BookOpen, Target, Users, Wand2, ChevronLeft, ChevronRight, Download, ChevronDown } from 'lucide-react';
 import { lessonPlanService } from '../services/geminiService';
 
 interface LessonPlan {
@@ -92,11 +92,11 @@ export function LessonPlanner() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-8">
+    <div className="max-w-7xl mx-auto p-6 space-y-8">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-4">
+          <h1 className="text-3xl font-bold text-indigo-800 mb-2">
             AI Lesson Planner
           </h1>
           <p className="text-lg text-gray-600">
@@ -106,10 +106,10 @@ export function LessonPlanner() {
         
         <button
           onClick={() => setShowCreateForm(true)}
-          className="flex items-center space-x-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200"
+          className="flex items-center justify-center space-x-2 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-colors duration-200 shadow-md"
         >
-          <Plus className="w-4 h-4" />
-          <span>Create Lesson Plan</span>
+          <Plus className="w-5 h-5" />
+          <span className="font-medium">Create Lesson Plan</span>
         </button>
       </div>
 
@@ -119,44 +119,50 @@ export function LessonPlanner() {
           <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center">
             <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"></div>
             
-            <div className="relative inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">
-                  Generate New Lesson Plan with Gemini AI
+            <div className="relative inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+              <div className="bg-white px-6 pt-6 pb-4">
+                <h3 className="text-xl font-semibold text-gray-900 mb-6">
+                  Generate New Lesson Plan
                 </h3>
                 
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Subject
                       </label>
-                      <select
-                        value={newPlan.subject}
-                        onChange={(e) => setNewPlan({ ...newPlan, subject: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="">Select Subject</option>
-                        {subjects.map(subject => (
-                          <option key={subject} value={subject}>{subject}</option>
-                        ))}
-                      </select>
+                      <div className="relative">
+                        <select
+                          value={newPlan.subject}
+                          onChange={(e) => setNewPlan({ ...newPlan, subject: e.target.value })}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 appearance-none"
+                        >
+                          <option value="">Select Subject</option>
+                          {subjects.map(subject => (
+                            <option key={subject} value={subject}>{subject}</option>
+                          ))}
+                        </select>
+                        <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                      </div>
                     </div>
                     
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Grade
                       </label>
-                      <select
-                        value={newPlan.grade}
-                        onChange={(e) => setNewPlan({ ...newPlan, grade: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="">Select Grade</option>
-                        {grades.map(grade => (
-                          <option key={grade} value={grade}>{grade}</option>
-                        ))}
-                      </select>
+                      <div className="relative">
+                        <select
+                          value={newPlan.grade}
+                          onChange={(e) => setNewPlan({ ...newPlan, grade: e.target.value })}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 appearance-none"
+                        >
+                          <option value="">Select Grade</option>
+                          {grades.map(grade => (
+                            <option key={grade} value={grade}>{grade}</option>
+                          ))}
+                        </select>
+                        <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                      </div>
                     </div>
                   </div>
                   
@@ -169,7 +175,7 @@ export function LessonPlanner() {
                       value={newPlan.topic}
                       onChange={(e) => setNewPlan({ ...newPlan, topic: e.target.value })}
                       placeholder="e.g., Fractions, Water Cycle, Adjectives"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
                   
@@ -184,7 +190,7 @@ export function LessonPlanner() {
                       min="30"
                       max="90"
                       step="15"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
                   
@@ -196,24 +202,26 @@ export function LessonPlanner() {
                       value={newPlan.curriculum}
                       onChange={(e) => setNewPlan({ ...newPlan, curriculum: e.target.value })}
                       placeholder="Additional context about curriculum requirements, learning standards, etc."
-                      className="w-full h-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                      className="w-full h-24 px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
                     />
                   </div>
                 </div>
               </div>
               
-              <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+              <div className="bg-gray-50 px-6 py-4 flex flex-col sm:flex-row-reverse gap-3">
                 <button
                   onClick={generateLessonPlan}
                   disabled={!newPlan.subject || !newPlan.grade || !newPlan.topic || isGenerating}
-                  className="w-full inline-flex justify-center items-center space-x-2 rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-center justify-center space-x-2 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 disabled:opacity-70 disabled:cursor-not-allowed transition-colors duration-200 shadow-md"
                 >
-                  <Wand2 className="w-4 h-4" />
-                  <span>{isGenerating ? 'Generating with Gemini...' : 'Generate Plan'}</span>
+                  <Wand2 className="w-5 h-5" />
+                  <span className="font-medium">
+                    {isGenerating ? 'Generating with Gemini...' : 'Generate Plan'}
+                  </span>
                 </button>
                 <button
                   onClick={() => setShowCreateForm(false)}
-                  className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+                  className="px-6 py-3 border border-gray-300 bg-white text-gray-700 rounded-xl hover:bg-gray-50 transition-colors duration-200"
                 >
                   Cancel
                 </button>
@@ -224,65 +232,69 @@ export function LessonPlanner() {
       )}
 
       {/* Weekly Calendar View */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-gray-900">Weekly Overview</h2>
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => {
-                  const prevWeek = new Date(selectedWeek);
-                  prevWeek.setDate(selectedWeek.getDate() - 7);
-                  setSelectedWeek(prevWeek);
-                }}
-                className="px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
-              >
-                ← Previous
-              </button>
-              <span className="font-medium text-gray-900">
-                {selectedWeek.toLocaleDateString('en-US', { 
-                  month: 'long', 
-                  day: 'numeric', 
-                  year: 'numeric' 
-                })}
-              </span>
-              <button
-                onClick={() => {
-                  const nextWeek = new Date(selectedWeek);
-                  nextWeek.setDate(selectedWeek.getDate() + 7);
-                  setSelectedWeek(nextWeek);
-                }}
-                className="px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
-              >
-                Next →
-              </button>
-            </div>
+      <div className="bg-white rounded-2xl shadow-md border border-gray-200 overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <h2 className="text-xl font-semibold text-gray-900">Weekly Overview</h2>
+          <div className="flex items-center justify-between sm:justify-end gap-4">
+            <button
+              onClick={() => {
+                const prevWeek = new Date(selectedWeek);
+                prevWeek.setDate(selectedWeek.getDate() - 7);
+                setSelectedWeek(prevWeek);
+              }}
+              className="p-2 text-gray-600 hover:text-indigo-600 hover:bg-gray-100 rounded-lg transition-colors duration-200"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <span className="font-medium text-gray-900">
+              {selectedWeek.toLocaleDateString('en-US', { 
+                month: 'long', 
+                day: 'numeric', 
+                year: 'numeric' 
+              })}
+            </span>
+            <button
+              onClick={() => {
+                const nextWeek = new Date(selectedWeek);
+                nextWeek.setDate(selectedWeek.getDate() + 7);
+                setSelectedWeek(nextWeek);
+              }}
+              className="p-2 text-gray-600 hover:text-indigo-600 hover:bg-gray-100 rounded-lg transition-colors duration-200"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
           </div>
         </div>
         
         <div className="grid grid-cols-7 gap-px bg-gray-200">
           {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-            <div key={day} className="bg-gray-50 px-3 py-2 text-center text-sm font-medium text-gray-700">
+            <div key={day} className="bg-gray-50 px-3 py-3 text-center text-sm font-medium text-gray-700">
               {day}
             </div>
           ))}
           
           {getWeekDays(selectedWeek).map((date) => {
             const dayLessons = getDayLessons(date);
+            const isToday = date.toDateString() === new Date().toDateString();
             return (
-              <div key={date.toISOString()} className="bg-white min-h-32 p-2">
-                <div className="text-sm font-medium text-gray-900 mb-2">
+              <div 
+                key={date.toISOString()} 
+                className={`bg-white min-h-32 p-3 ${isToday ? 'border-t-2 border-indigo-500' : ''}`}
+              >
+                <div className={`text-sm font-medium mb-2 ${
+                  isToday ? 'text-indigo-600 font-semibold' : 'text-gray-900'
+                }`}>
                   {date.getDate()}
                 </div>
-                <div className="space-y-1">
+                <div className="space-y-2">
                   {dayLessons.map((lesson) => (
                     <div
                       key={lesson.id}
-                      className="text-xs p-2 bg-blue-100 text-blue-800 rounded border-l-2 border-blue-400"
+                      className="text-xs p-2 bg-indigo-50 text-indigo-800 rounded-lg border-l-4 border-indigo-500 hover:bg-indigo-100 transition-colors duration-200 cursor-pointer"
                     >
                       <div className="font-medium truncate">{lesson.subject}</div>
                       <div className="truncate">{lesson.topic}</div>
-                      <div className="flex items-center space-x-1 mt-1">
+                      <div className="flex items-center space-x-1 mt-1 text-indigo-600">
                         <Clock className="w-3 h-3" />
                         <span>{lesson.duration}min</span>
                       </div>
@@ -297,36 +309,48 @@ export function LessonPlanner() {
 
       {/* Lesson Plans List */}
       <div className="space-y-6">
-        <h2 className="text-2xl font-semibold text-gray-900">Recent Lesson Plans</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-semibold text-gray-900">Recent Lesson Plans</h2>
+          {lessonPlans.length > 0 && (
+            <span className="text-sm text-gray-500">
+              {lessonPlans.length} {lessonPlans.length === 1 ? 'plan' : 'plans'}
+            </span>
+          )}
+        </div>
         
         {lessonPlans.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
-            <Calendar className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-500">No lesson plans created yet. Generate your first one above!</p>
+          <div className="text-center py-16 bg-white rounded-2xl border border-gray-200 shadow-sm">
+            <div className="mx-auto h-24 w-24 rounded-full bg-indigo-50 flex items-center justify-center mb-6">
+              <Calendar className="w-12 h-12 text-indigo-600" />
+            </div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No lesson plans created yet</h3>
+            <p className="text-gray-500 max-w-md mx-auto">
+              Generate your first lesson plan to get started with your weekly planning
+            </p>
           </div>
         ) : (
           <div className="space-y-6">
             {lessonPlans.map((plan) => (
-              <div key={plan.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center space-x-4">
+              <div key={plan.id} className="bg-white rounded-2xl shadow-md border border-gray-200 overflow-hidden">
+                <div className="p-6 border-b border-gray-200 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                  <div className="flex items-start gap-4">
                     <div className="flex-shrink-0">
-                      <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                        <BookOpen className="w-6 h-6 text-blue-600" />
+                      <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center">
+                        <BookOpen className="w-6 h-6 text-indigo-600" />
                       </div>
                     </div>
                     <div>
                       <h3 className="text-xl font-semibold text-gray-900">{plan.topic}</h3>
-                      <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
-                        <span className="flex items-center space-x-1">
+                      <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600 mt-2">
+                        <span className="flex items-center space-x-2 px-3 py-1 bg-blue-50 text-blue-700 rounded-full">
                           <BookOpen className="w-4 h-4" />
                           <span>{plan.subject}</span>
                         </span>
-                        <span className="flex items-center space-x-1">
+                        <span className="flex items-center space-x-2 px-3 py-1 bg-green-50 text-green-700 rounded-full">
                           <Users className="w-4 h-4" />
                           <span>{plan.grade}</span>
                         </span>
-                        <span className="flex items-center space-x-1">
+                        <span className="flex items-center space-x-2 px-3 py-1 bg-purple-50 text-purple-700 rounded-full">
                           <Clock className="w-4 h-4" />
                           <span>{plan.duration} minutes</span>
                         </span>
@@ -334,44 +358,60 @@ export function LessonPlanner() {
                     </div>
                   </div>
                   
-                  <span className="px-3 py-1 bg-green-100 text-green-800 text-xs rounded-full">
-                    {plan.date.toLocaleDateString()}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className="px-4 py-1.5 bg-gray-100 text-gray-700 text-sm font-medium rounded-full">
+                      {plan.date.toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                    </span>
+                    <button className="flex items-center space-x-2 px-4 py-1.5 bg-white text-indigo-600 rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors duration-200">
+                      <Download className="w-4 h-4" />
+                      <span className="text-sm font-medium">Export</span>
+                    </button>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="space-y-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
+                  <div className="space-y-6">
                     <div>
-                      <div className="flex items-center space-x-2 mb-2">
-                        <Target className="w-4 h-4 text-purple-600" />
-                        <h4 className="font-medium text-gray-900">Learning Objectives</h4>
+                      <div className="flex items-center space-x-3 mb-3">
+                        <div className="p-2 bg-purple-100 rounded-lg">
+                          <Target className="w-5 h-5 text-purple-600" />
+                        </div>
+                        <h4 className="font-semibold text-gray-900">Learning Objectives</h4>
                       </div>
-                      <ul className="list-disc list-inside space-y-1 text-sm text-gray-700">
+                      <ul className="space-y-2 pl-4">
                         {plan.objectives.map((objective, index) => (
-                          <li key={index}>{objective}</li>
+                          <li key={index} className="flex items-start space-x-2 text-gray-700">
+                            <span className="text-purple-500 mt-1">•</span>
+                            <span>{objective}</span>
+                          </li>
                         ))}
                       </ul>
                     </div>
                     
                     <div>
-                      <div className="flex items-center space-x-2 mb-2">
-                        <Clock className="w-4 h-4 text-orange-600" />
-                        <h4 className="font-medium text-gray-900">Activities</h4>
+                      <div className="flex items-center space-x-3 mb-3">
+                        <div className="p-2 bg-orange-100 rounded-lg">
+                          <Clock className="w-5 h-5 text-orange-600" />
+                        </div>
+                        <h4 className="font-semibold text-gray-900">Activities</h4>
                       </div>
-                      <ul className="list-disc list-inside space-y-1 text-sm text-gray-700">
+                      <ul className="space-y-2 pl-4">
                         {plan.activities.map((activity, index) => (
-                          <li key={index}>{activity}</li>
+                          <li key={index} className="flex items-start space-x-2 text-gray-700">
+                            <span className="text-orange-500 mt-1">•</span>
+                            <span>{activity}</span>
+                          </li>
                         ))}
                       </ul>
                     </div>
                   </div>
                   
-                  <div className="space-y-4">
+                  <div className="space-y-6">
                     <div>
-                      <h4 className="font-medium text-gray-900 mb-2">Materials Needed</h4>
+                      <h4 className="font-semibold text-gray-900 mb-3">Materials Needed</h4>
                       <div className="flex flex-wrap gap-2">
                         {plan.materials.map((material, index) => (
-                          <span key={index} className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full">
+                          <span key={index} className="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm rounded-full">
                             {material}
                           </span>
                         ))}
@@ -379,13 +419,13 @@ export function LessonPlanner() {
                     </div>
                     
                     <div>
-                      <h4 className="font-medium text-gray-900 mb-2">Assessment</h4>
-                      <p className="text-sm text-gray-700">{plan.assessment}</p>
+                      <h4 className="font-semibold text-gray-900 mb-3">Assessment</h4>
+                      <p className="text-gray-700 bg-gray-50 p-4 rounded-lg">{plan.assessment}</p>
                     </div>
                     
                     <div>
-                      <h4 className="font-medium text-gray-900 mb-2">Homework</h4>
-                      <p className="text-sm text-gray-700">{plan.homework}</p>
+                      <h4 className="font-semibold text-gray-900 mb-3">Homework</h4>
+                      <p className="text-gray-700 bg-gray-50 p-4 rounded-lg">{plan.homework}</p>
                     </div>
                   </div>
                 </div>

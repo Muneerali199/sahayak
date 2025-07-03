@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Upload, FileImage, Download, Layers, Zap } from 'lucide-react';
+import { Upload, FileImage, Download, Layers, Zap, ChevronDown } from 'lucide-react';
 import { worksheetService } from '../services/geminiService';
 
 interface WorksheetSet {
@@ -19,6 +19,7 @@ export function WorksheetGenerator() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [worksheetSets, setWorksheetSets] = useState<WorksheetSet[]>([]);
+  const [selectedGrade, setSelectedGrade] = useState('All Grades');
 
   const handleImageUpload = (file: File) => {
     const reader = new FileReader();
@@ -87,24 +88,29 @@ export function WorksheetGenerator() {
     }
   };
 
+  const filteredWorksheetSets = worksheetSets.filter(set => 
+    selectedGrade === 'All Grades' || 
+    set.worksheets.some(ws => ws.grade === selectedGrade)
+  );
+
   return (
-    <div className="max-w-6xl mx-auto space-y-8">
+    <div className="max-w-6xl mx-auto p-6 space-y-8">
       {/* Header */}
       <div className="text-center">
-        <h1 className="text-3xl font-bold text-gray-900 mb-4">
+        <h1 className="text-4xl font-bold text-indigo-800 mb-4">
           Smart Worksheet Generator
         </h1>
-        <p className="text-lg text-gray-600">
+        <p className="text-xl text-gray-600 max-w-3xl mx-auto">
           Upload textbook pages and generate multi-level worksheets with Gemini Vision AI
         </p>
       </div>
 
       {/* Upload Section */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <div className="bg-white rounded-2xl shadow-md border border-gray-200 p-8">
         <div
-          className={`border-2 border-dashed rounded-xl p-8 text-center transition-all duration-200 ${
+          className={`border-2 border-dashed rounded-2xl p-12 text-center transition-all duration-200 ${
             isDragging
-              ? 'border-blue-500 bg-blue-50'
+              ? 'border-indigo-500 bg-indigo-50'
               : 'border-gray-300 hover:border-gray-400'
           }`}
           onDragOver={handleDragOver}
@@ -112,33 +118,35 @@ export function WorksheetGenerator() {
           onDrop={handleDrop}
         >
           {isProcessing ? (
-            <div className="space-y-4">
-              <div className="animate-spin mx-auto w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full"></div>
-              <div className="space-y-2">
-                <p className="text-lg font-medium text-gray-900">Processing with Gemini Vision...</p>
-                <p className="text-sm text-gray-600">
+            <div className="space-y-6">
+              <div className="animate-spin mx-auto w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full"></div>
+              <div className="space-y-3">
+                <p className="text-xl font-medium text-gray-900">Processing with Gemini Vision...</p>
+                <p className="text-gray-600">
                   Extracting text and generating multi-level worksheets
                 </p>
               </div>
             </div>
           ) : uploadedImage ? (
-            <div className="space-y-4">
+            <div className="space-y-6">
               <img
                 src={uploadedImage}
                 alt="Uploaded"
-                className="max-w-md mx-auto rounded-lg shadow-sm"
+                className="max-w-md mx-auto rounded-xl shadow-sm border border-gray-200"
               />
-              <p className="text-sm text-gray-600">Processing this image...</p>
+              <p className="text-gray-600">Processing this image...</p>
             </div>
           ) : (
-            <div className="space-y-4">
-              <FileImage className="w-16 h-16 text-gray-400 mx-auto" />
+            <div className="space-y-6">
+              <div className="mx-auto w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center">
+                <FileImage className="w-10 h-10 text-indigo-600" />
+              </div>
               <div>
-                <p className="text-xl font-medium text-gray-900 mb-2">
+                <p className="text-2xl font-medium text-gray-900 mb-3">
                   Upload Textbook Page
                 </p>
-                <p className="text-gray-600 mb-4">
-                  Drag and drop an image here, or click to browse
+                <p className="text-gray-600 mb-6 max-w-md mx-auto">
+                  Drag and drop an image here, or click to browse files
                 </p>
                 <input
                   type="file"
@@ -149,10 +157,10 @@ export function WorksheetGenerator() {
                 />
                 <label
                   htmlFor="file-upload"
-                  className="inline-flex items-center space-x-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors duration-200"
+                  className="inline-flex items-center space-x-3 px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 cursor-pointer transition-colors duration-200 shadow-md"
                 >
-                  <Upload className="w-4 h-4" />
-                  <span>Choose File</span>
+                  <Upload className="w-5 h-5" />
+                  <span className="font-medium">Choose File</span>
                 </label>
               </div>
               <p className="text-sm text-gray-500">
@@ -165,38 +173,72 @@ export function WorksheetGenerator() {
 
       {/* Generated Worksheets */}
       <div className="space-y-6">
-        <h2 className="text-2xl font-semibold text-gray-900">Generated Worksheets</h2>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <h2 className="text-2xl font-semibold text-gray-900">Generated Worksheets</h2>
+          
+          {worksheetSets.length > 0 && (
+            <div className="flex items-center space-x-3">
+              <span className="text-sm text-gray-600">Filter by grade:</span>
+              <div className="relative">
+                <select
+                  value={selectedGrade}
+                  onChange={(e) => setSelectedGrade(e.target.value)}
+                  className="appearance-none pl-3 pr-8 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                >
+                  <option value="All Grades">All Grades</option>
+                  <option value="Grade 1">Grade 1</option>
+                  <option value="Grade 2">Grade 2</option>
+                  <option value="Grade 3">Grade 3</option>
+                  <option value="Grade 4">Grade 4</option>
+                  <option value="Grade 5">Grade 5</option>
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+              </div>
+            </div>
+          )}
+        </div>
         
-        {worksheetSets.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
-            <Layers className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-500">No worksheets generated yet. Upload an image above!</p>
+        {filteredWorksheetSets.length === 0 ? (
+          <div className="text-center py-16 bg-white rounded-2xl border border-gray-200 shadow-sm">
+            <div className="mx-auto h-24 w-24 rounded-full bg-indigo-50 flex items-center justify-center mb-6">
+              <Layers className="w-12 h-12 text-indigo-600" />
+            </div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No worksheets generated yet</h3>
+            <p className="text-gray-500 max-w-md mx-auto">
+              Upload a textbook page image to create your first set of worksheets
+            </p>
           </div>
         ) : (
           <div className="space-y-8">
-            {worksheetSets.map((set) => (
-              <div key={set.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            {filteredWorksheetSets.map((set) => (
+              <div key={set.id} className="bg-white rounded-2xl shadow-md border border-gray-200 overflow-hidden">
                 {/* Header */}
-                <div className="bg-gradient-to-r from-blue-50 to-purple-50 px-6 py-4 border-b border-gray-200">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
+                <div className="bg-gradient-to-r from-indigo-50 to-purple-50 px-6 py-5 border-b border-gray-200">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div className="flex items-center gap-4">
                       <img
                         src={set.originalImage}
                         alt="Original"
-                        className="w-16 h-16 object-cover rounded-lg"
+                        className="w-16 h-16 object-cover rounded-lg border border-gray-200"
                       />
                       <div>
-                        <h3 className="text-lg font-semibold text-gray-900">
+                        <h3 className="text-xl font-semibold text-gray-900">
                           Worksheet Set
                         </h3>
                         <p className="text-sm text-gray-600">
-                          Generated {set.timestamp.toLocaleDateString()}
+                          Generated {set.timestamp.toLocaleDateString([], { 
+                            month: 'short', 
+                            day: 'numeric', 
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
                         </p>
                       </div>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <span className="flex items-center space-x-1 px-3 py-1 bg-green-100 text-green-800 text-sm rounded-full">
-                        <Zap className="w-3 h-3" />
+                      <span className="flex items-center space-x-2 px-4 py-1.5 bg-indigo-100 text-indigo-800 text-sm font-medium rounded-full">
+                        <Zap className="w-4 h-4" />
                         <span>Gemini AI</span>
                       </span>
                     </div>
@@ -205,23 +247,25 @@ export function WorksheetGenerator() {
 
                 {/* Extracted Text */}
                 <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                  <h4 className="text-sm font-medium text-gray-700 mb-2">Extracted Text:</h4>
-                  <p className="text-sm text-gray-600 italic max-h-32 overflow-y-auto">
-                    {set.extractedText}
-                  </p>
+                  <h4 className="text-sm font-medium text-gray-700 mb-3">Extracted Text:</h4>
+                  <div className="bg-white p-4 rounded-lg border border-gray-200 max-h-40 overflow-y-auto">
+                    <p className="text-sm text-gray-600">
+                      {set.extractedText}
+                    </p>
+                  </div>
                 </div>
 
                 {/* Worksheets */}
                 <div className="p-6">
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {set.worksheets.map((worksheet, index) => (
-                      <div key={index} className="border border-gray-200 rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center space-x-2">
-                            <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
+                      <div key={index} className="border border-gray-200 rounded-xl p-5 hover:shadow-md transition-shadow duration-200">
+                        <div className="flex items-center justify-between mb-5">
+                          <div className="flex items-center gap-2">
+                            <span className="px-3 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
                               {worksheet.grade}
                             </span>
-                            <span className={`px-2 py-1 text-xs rounded-full ${
+                            <span className={`px-3 py-1 text-xs font-medium rounded-full ${
                               worksheet.difficulty === 'Easy' 
                                 ? 'bg-green-100 text-green-800'
                                 : worksheet.difficulty === 'Medium'
@@ -231,20 +275,23 @@ export function WorksheetGenerator() {
                               {worksheet.difficulty}
                             </span>
                           </div>
-                          <button className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors duration-200">
-                            <Download className="w-4 h-4" />
+                          <button 
+                            className="p-2 text-gray-600 hover:text-indigo-600 hover:bg-gray-100 rounded-lg transition-colors duration-200"
+                            title="Download worksheet"
+                          >
+                            <Download className="w-5 h-5" />
                           </button>
                         </div>
                         
-                        <div className="space-y-3">
+                        <div className="space-y-4">
                           {worksheet.questions.map((question, qIndex) => (
-                            <div key={qIndex} className="text-sm">
-                              <span className="font-medium text-gray-700">
-                                {qIndex + 1}. 
+                            <div key={qIndex} className="flex items-start">
+                              <span className="flex-shrink-0 inline-flex items-center justify-center w-6 h-6 bg-indigo-100 text-indigo-800 text-xs font-medium rounded-full mr-3 mt-0.5">
+                                {qIndex + 1}
                               </span>
-                              <span className="text-gray-600 ml-2">
+                              <p className="text-gray-700">
                                 {question}
-                              </span>
+                              </p>
                             </div>
                           ))}
                         </div>
