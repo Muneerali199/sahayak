@@ -94,7 +94,7 @@ if not GEMINI_API_KEY:
 
 genai.configure(api_key=GEMINI_API_KEY)
 text_model = genai.GenerativeModel('gemini-1.5-flash')
-vision_model = genai.GenerativeModel('gemini-pro-vision')
+vision_model = genai.GenerativeModel('gemini-2.0-flash')
 
 # ======================
 # Pydantic Models
