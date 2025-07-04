@@ -1,8 +1,24 @@
 import { API_BASE_URL } from '../config';
 
+interface VisualAidResponse {
+  description: string;
+  imageUrl?: string;
+  imageBase64?: string;
+}
+
+interface WorksheetResponse {
+  extracted_text: string;
+  variants: any[];
+}
+
 // Content Generation Service
 export class ContentGenerationService {
-  async generateContent(prompt: string, contentType: string, language: string, grade: string): Promise<string> {
+  async generateContent(
+    prompt: string, 
+    contentType: string, 
+    language: string, 
+    grade: string
+  ): Promise<string> {
     try {
       const response = await fetch(`${API_BASE_URL}/content/generate`, {
         method: 'POST',
@@ -18,21 +34,26 @@ export class ContentGenerationService {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to generate content');
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to generate content');
       }
 
       const data = await response.json();
       return data.content;
     } catch (error) {
       console.error('Content generation error:', error);
-      throw new Error('Failed to generate content. Please try again.');
+      throw new Error(
+        error instanceof Error 
+          ? error.message 
+          : 'Failed to generate content. Please try again.'
+      );
     }
   }
 }
 
 // Worksheet Generation Service
 export class WorksheetGenerationService {
-  async extractTextFromImage(file: File): Promise<string> {
+  async extractTextFromImage(file: File): Promise<WorksheetResponse> {
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -43,18 +64,25 @@ export class WorksheetGenerationService {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to extract text from image');
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to process worksheet image');
       }
 
-      const data = await response.json();
-      return data.extracted_text;
+      return await response.json();
     } catch (error) {
-      console.error('Text extraction error:', error);
-      throw new Error('Failed to extract text from image. Please try again.');
+      console.error('Worksheet processing error:', error);
+      throw new Error(
+        error instanceof Error 
+          ? error.message 
+          : 'Failed to process worksheet image. Please try again.'
+      );
     }
   }
 
-  async generateWorksheets(extractedText: string, subject: string): Promise<any[]> {
+  async generateWorksheets(
+    extractedText: string, 
+    subject: string
+  ): Promise<WorksheetResponse> {
     try {
       const response = await fetch(`${API_BASE_URL}/worksheets/generate`, {
         method: 'POST',
@@ -68,50 +96,58 @@ export class WorksheetGenerationService {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to generate worksheets');
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to generate worksheets');
       }
 
-      const data = await response.json();
-      return data.worksheets;
+      return await response.json();
     } catch (error) {
       console.error('Worksheet generation error:', error);
-      throw new Error('Failed to generate worksheets. Please try again.');
+      throw new Error(
+        error instanceof Error 
+          ? error.message 
+          : 'Failed to generate worksheets. Please try again.'
+      );
     }
   }
 }
 
-// Chat Service
-export class ChatService {
-  async generateResponse(message: string, language: string): Promise<string> {
+// Enhanced Visual Aid Service
+export class VisualAidService {
+  async generateVisualAid(
+    prompt: string, 
+    aidType: string, 
+    subject: string, 
+    image?: File
+  ): Promise<VisualAidResponse> {
     try {
-      const response = await fetch(`${API_BASE_URL}/chat/send`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message,
-          language
-        }),
-      });
+      // Handle image upload case
+      if (image) {
+        const formData = new FormData();
+        formData.append('prompt', prompt);
+        formData.append('aid_type', aidType);
+        formData.append('subject', subject);
+        formData.append('image', image);
 
-      if (!response.ok) {
-        throw new Error('Failed to get chat response');
+        const response = await fetch(`${API_BASE_URL}/visual-aids/generate`, {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.detail || 'Failed to generate visual aid with image');
+        }
+
+        const data = await response.json();
+        return {
+          description: data.description,
+          imageUrl: data.image_url,
+          imageBase64: data.image_base64
+        };
       }
 
-      const data = await response.json();
-      return data.content;
-    } catch (error) {
-      console.error('Chat response error:', error);
-      throw new Error('Failed to generate response. Please try again.');
-    }
-  }
-}
-
-// Visual Aid Service
-export class VisualAidService {
-  async generateVisualAidDescription(prompt: string, aidType: string, subject: string): Promise<string> {
-    try {
+      // Handle text-only case
       const response = await fetch(`${API_BASE_URL}/visual-aids/generate`, {
         method: 'POST',
         headers: {
@@ -125,21 +161,100 @@ export class VisualAidService {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to generate visual aid');
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to generate visual aid');
       }
 
       const data = await response.json();
-      return data.description;
+      return {
+        description: data.description,
+        imageUrl: data.image_url
+      };
     } catch (error) {
       console.error('Visual aid generation error:', error);
-      throw new Error('Failed to generate visual aid description. Please try again.');
+      throw new Error(
+        error instanceof Error 
+          ? error.message 
+          : 'Failed to generate visual aid. Please try again.'
+      );
+    }
+  }
+
+  async analyzeVisualAid(image: File): Promise<string> {
+    try {
+      const formData = new FormData();
+      formData.append('image', image);
+
+      const response = await fetch(`${API_BASE_URL}/visual-aids/analyze`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to analyze visual aid');
+      }
+
+      const data = await response.json();
+      return data.analysis;
+    } catch (error) {
+      console.error('Visual aid analysis error:', error);
+      throw new Error(
+        error instanceof Error 
+          ? error.message 
+          : 'Failed to analyze visual aid. Please try again.'
+      );
+    }
+  }
+}
+
+// Chat Service
+export class ChatService {
+  async generateResponse(
+    message: string, 
+    language: string, 
+    context?: string
+  ): Promise<string> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/chat/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message,
+          language,
+          context
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to get chat response');
+      }
+
+      const data = await response.json();
+      return data.content;
+    } catch (error) {
+      console.error('Chat response error:', error);
+      throw new Error(
+        error instanceof Error 
+          ? error.message 
+          : 'Failed to generate response. Please try again.'
+      );
     }
   }
 }
 
 // Lesson Planning Service
 export class LessonPlanningService {
-  async generateLessonPlan(subject: string, grade: string, topic: string, duration: number, curriculum?: string): Promise<any> {
+  async generateLessonPlan(
+    subject: string, 
+    grade: string, 
+    topic: string, 
+    duration: number, 
+    curriculum?: string
+  ): Promise<any> {
     try {
       const response = await fetch(`${API_BASE_URL}/lesson-plans/generate`, {
         method: 'POST',
@@ -156,7 +271,8 @@ export class LessonPlanningService {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to generate lesson plan');
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to generate lesson plan');
       }
 
       const data = await response.json();
@@ -169,7 +285,11 @@ export class LessonPlanningService {
       };
     } catch (error) {
       console.error('Lesson plan generation error:', error);
-      throw new Error('Failed to generate lesson plan. Please try again.');
+      throw new Error(
+        error instanceof Error 
+          ? error.message 
+          : 'Failed to generate lesson plan. Please try again.'
+      );
     }
   }
 }
@@ -199,7 +319,8 @@ export class ReadingAssessmentService {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to generate assessment');
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to generate assessment');
       }
 
       const data = await response.json();
@@ -211,7 +332,11 @@ export class ReadingAssessmentService {
       };
     } catch (error) {
       console.error('Assessment feedback error:', error);
-      throw new Error('Failed to generate assessment. Please try again.');
+      throw new Error(
+        error instanceof Error 
+          ? error.message 
+          : 'Failed to generate assessment. Please try again.'
+      );
     }
   }
 }

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File, status, Request
+from fastapi import FastAPI, HTTPException, UploadFile, File, status, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -57,6 +57,10 @@ async def catch_exceptions_middleware(request: Request, call_next):
 # Configuration
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
+UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR.mkdir(exist_ok=True)
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+ALLOWED_FILE_TYPES = ["image/jpeg", "image/png"]
 
 # Load datasets with improved safety
 def load_dataset(filename: str, default_columns: List[str]) -> pd.DataFrame:
@@ -93,7 +97,7 @@ if not GEMINI_API_KEY:
     raise ValueError("GOOGLE_API_KEY environment variable not set")
 
 genai.configure(api_key=GEMINI_API_KEY)
-text_model = genai.GenerativeModel('gemini-1.5-flash')
+text_model = genai.GenerativeModel('gemini-2.0-flash')
 vision_model = genai.GenerativeModel('gemini-2.0-flash')
 
 # ======================
@@ -132,6 +136,12 @@ class VisualAidRequest(BaseModel):
     prompt: str
     aid_type: str
     subject: str
+
+class VisualAidUploadRequest(BaseModel):
+    prompt: str
+    aid_type: str
+    subject: str
+    image: Optional[UploadFile] = None
 
 class GeneratedContent(BaseModel):
     id: str
@@ -201,12 +211,20 @@ class GeneratedVisualAid(BaseModel):
     description: str
     timestamp: str
 
+class GeneratedVisualAidWithImage(GeneratedVisualAid):
+    image_base64: Optional[str] = None
+
 class HealthCheck(BaseModel):
     status: str
     gemini_ready: bool
     datasets_loaded: Dict[str, bool]
     version: str
     models: Dict[str, str]
+
+class VisualAidAnalysisResponse(BaseModel):
+    analysis: str
+    image_type: str
+    size_bytes: int
 
 # ======================
 # In-memory Storage
@@ -333,6 +351,21 @@ def create_fallback_worksheet(content: str) -> Dict:
         "subject": "General",
         "topic": "Fallback Worksheet"
     }
+
+def save_uploaded_file(file: UploadFile) -> Path:
+    """Save uploaded file to disk and return its path"""
+    file_path = UPLOAD_DIR / f"{uuid.uuid4()}_{file.filename}"
+    with open(file_path, "wb") as buffer:
+        buffer.write(file.file.read())
+    return file_path
+
+def cleanup_file(file_path: Path):
+    """Remove temporary file"""
+    try:
+        if file_path.exists():
+            file_path.unlink()
+    except Exception as e:
+        logger.warning(f"Failed to delete file {file_path}: {str(e)}")
 
 # ======================
 # API Endpoints
@@ -501,71 +534,105 @@ async def get_lesson_plans(limit: int = 10):
     return lesson_plans_store[:limit]
 
 # ======================
-# Enhanced Worksheet Generator Endpoints
+# Enhanced Worksheet Generator Endpoints (Fixed)
 # ======================
-@app.post("/worksheets/upload", response_model=EnhancedWorksheetSet)
+@app.post("/worksheets/upload", 
+          response_model=EnhancedWorksheetSet,
+          responses={
+              400: {"description": "Invalid file type"},
+              413: {"description": "File too large"},
+              422: {"description": "Unprocessable entity"},
+              500: {"description": "Internal server error"}
+          })
 async def upload_and_process_worksheet(file: UploadFile = File(...)):
     """Process uploaded worksheet image with enhanced text extraction"""
     try:
-        # Validate input
-        if not file.content_type.startswith('image/'):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Only image files (JPEG, PNG) are supported"
-            )
-
-        # Process image
-        contents = await file.read()
-        if len(contents) > 5 * 1024 * 1024:  # 5MB limit
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail="Image file too large (max 5MB)"
-            )
-
-        base64_image = base64.b64encode(contents).decode('utf-8')
-
-        # Enhanced text extraction prompt
-        extraction_prompt = """
-        Carefully extract ALL text from this educational worksheet image exactly as it appears.
-        Preserve:
-        - Original formatting (bullet points, numbering)
-        - Mathematical symbols and equations
-        - Question/answer groupings
-        - Headers and section titles
-        - Any special instructions
-
-        Return ONLY the raw extracted text with:
-        - No additional commentary
-        - No interpretation
-        - No modifications
-        - Maintain original line breaks where meaningful
-
-        For multiple choice questions, include:
-        - The question stem
-        - All options (A, B, C, etc.)
-        - The correct answer if visible
-        """
-
-        # Use vision model for better accuracy
-        response = generate_gemini_response(
-            [extraction_prompt, {"mime_type": file.content_type, "data": base64_image}],
-            model_type='vision'
-        )
-        extracted_text = response.text
-
-        # Validate extraction
-        if len(extracted_text.strip()) < 20:
+        # Validate file exists and has content type
+        if not file.filename:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Could not extract meaningful text from image. Please try a clearer image."
+                detail="No file selected"
+            )
+            
+        if file.content_type not in ALLOWED_FILE_TYPES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Only {', '.join(ALLOWED_FILE_TYPES)} files are supported"
             )
 
-        # Generate worksheets
-        return await generate_enhanced_worksheets(
-            WorksheetRequest(text_content=extracted_text, subject="General"),
-            base64_image
-        )
+        # Read file content first (before saving)
+        try:
+            contents = await file.read()
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Failed to read file: {str(e)}"
+            )
 
+        # Validate file size
+        if len(contents) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File size exceeds maximum limit of {MAX_FILE_SIZE//(1024*1024)}MB"
+            )
+
+        # Save file temporarily
+        file_path = None
+        try:
+            file_path = UPLOAD_DIR / f"{uuid.uuid4()}_{file.filename}"
+            with open(file_path, "wb") as buffer:
+                buffer.write(contents)
+            
+            base64_image = base64.b64encode(contents).decode('utf-8')
+
+            # Enhanced text extraction prompt
+            extraction_prompt = """
+            Carefully extract ALL text from this educational worksheet image exactly as it appears.
+            Preserve:
+            - Original formatting (bullet points, numbering)
+            - Mathematical symbols and equations
+            - Question/answer groupings
+            - Headers and section titles
+            - Any special instructions
+
+            Return ONLY the raw extracted text with:
+            - No additional commentary
+            - No interpretation
+            - No modifications
+            - Maintain original line breaks where meaningful
+
+            For multiple choice questions, include:
+            - The question stem
+            - All options (A, B, C, etc.)
+            - The correct answer if visible
+            """
+
+            # Use vision model for better accuracy
+            response = generate_gemini_response(
+                [extraction_prompt, {"mime_type": file.content_type, "data": base64_image}],
+                model_type='vision'
+            )
+            extracted_text = response.text
+
+            # Validate extraction
+            if len(extracted_text.strip()) < 20:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Could not extract meaningful text from image. Please try a clearer image."
+                )
+
+            # Generate worksheets
+            return await generate_enhanced_worksheets(
+                WorksheetRequest(text_content=extracted_text, subject="General"),
+                base64_image
+            )
+        finally:
+            if file_path and file_path.exists():
+                try:
+                    file_path.unlink()
+                except Exception as e:
+                    logger.warning(f"Failed to delete temporary file: {str(e)}")
+            
     except HTTPException:
         raise
     except Exception as e:
@@ -842,18 +909,37 @@ async def get_reading_passages():
 # ======================
 # Visual Aid Designer Endpoints
 # ======================
-@app.post("/visual-aids/generate", response_model=GeneratedVisualAid)
-async def generate_visual_aid(request: VisualAidRequest):
-    """Generate educational visual aids"""
+@app.post("/visual-aids/generate", response_model=GeneratedVisualAidWithImage)
+async def generate_visual_aid(
+    request: VisualAidUploadRequest = Depends(),
+    image: UploadFile = File(None)
+):
+    """Generate educational visual aids with optional image upload"""
     try:
-        # Find similar visual aids in dataset - fixed sampling issue
+        # Handle image upload if provided
+        image_base64 = None
+        if image:
+            if not image.content_type.startswith('image/'):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Only image files (JPEG, PNG) are supported"
+                )
+
+            contents = await image.read()
+            if len(contents) > 5 * 1024 * 1024:  # 5MB limit
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail="Image file too large (max 5MB)"
+                )
+            image_base64 = base64.b64encode(contents).decode('utf-8')
+
+        # Find similar visual aids in dataset
         similar_aids = []
         if not visual_aids_dataset.empty:
             similar_aids = visual_aids_dataset[
                 (visual_aids_dataset['subject'] == request.subject) &
                 (visual_aids_dataset['type'] == request.aid_type)
             ]
-            # Take up to 2 samples without replacement
             sample_size = min(2, len(similar_aids))
             similar_aids = similar_aids.sample(sample_size)
         
@@ -872,23 +958,39 @@ async def generate_visual_aid(request: VisualAidRequest):
         description_response = generate_gemini_response(context_prompt)
         description = description_response.text
         
-        # Generate image prompt
-        image_prompt_context = f"""
-        Create a detailed prompt for generating an image of:
-        {request.prompt}
-        
-        The image should be a {request.aid_type} for {request.subject} education.
-        Make it visually appealing and educationally effective.
-        
-        Example image prompts:
-        {similar_aids['example_image_prompt'].tolist() if not similar_aids.empty else 'No examples found'}
-        """
-        
-        image_prompt_response = generate_gemini_response(image_prompt_context)
-        image_prompt = image_prompt_response.text
-        
-        # Get placeholder image (in production, generate actual image)
-        image_url = get_placeholder_image(request.aid_type, request.subject)
+        # Generate image prompt or analyze uploaded image
+        if image_base64:
+            # Analyze uploaded image
+            analysis_prompt = f"""
+            Analyze this educational image for a {request.subject} {request.aid_type}.
+            Provide:
+            1. A detailed description of the image content
+            2. Suggestions for improvement if needed
+            3. How it could be used in teaching {request.prompt}
+            """
+            
+            vision_response = generate_gemini_response(
+                [analysis_prompt, {"mime_type": image.content_type, "data": image_base64}],
+                model_type='vision'
+            )
+            description = f"Uploaded Image Analysis:\n{vision_response.text}\n\n{description}"
+            image_url = "data:image/png;base64," + image_base64
+        else:
+            # Generate image prompt for placeholder
+            image_prompt_context = f"""
+            Create a detailed prompt for generating an image of:
+            {request.prompt}
+            
+            The image should be a {request.aid_type} for {request.subject} education.
+            Make it visually appealing and educationally effective.
+            
+            Example image prompts:
+            {similar_aids['example_image_prompt'].tolist() if not similar_aids.empty else 'No examples found'}
+            """
+            
+            image_prompt_response = generate_gemini_response(image_prompt_context)
+            image_prompt = image_prompt_response.text
+            image_url = get_placeholder_image(request.aid_type, request.subject)
         
         # Create visual aid record
         visual_aid = {
@@ -897,56 +999,129 @@ async def generate_visual_aid(request: VisualAidRequest):
             "type": request.aid_type,
             "image_url": image_url,
             "description": description,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "image_base64": image_base64 if image_base64 else None
         }
         
         visual_aids_store.insert(0, visual_aid)
         return visual_aid
         
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Visual aid generation failed: {str(e)}")
+        logger.error(f"Visual aid generation failed: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Visual aid generation failed"
         )
 
-@app.get("/visual-aids", response_model=List[GeneratedVisualAid])
+@app.get("/visual-aids", response_model=List[GeneratedVisualAidWithImage])
 async def get_visual_aids(limit: int = 10):
-    """Get generated visual aids"""
+    """Get generated visual aids with image data"""
     return visual_aids_store[:limit]
+
+@app.post("/visual-aids/analyze", response_model=VisualAidAnalysisResponse)
+async def analyze_visual_aid(image: UploadFile = File(...)):
+    """Analyze an uploaded educational visual aid"""
+    try:
+        if not image.content_type.startswith('image/'):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only image files (JPEG, PNG) are supported"
+            )
+
+        contents = await image.read()
+        if len(contents) > 5 * 1024 * 1024:  # 5MB limit
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Image file too large (max 5MB)"
+            )
+
+        base64_image = base64.b64encode(contents).decode('utf-8')
+
+        analysis_prompt = """
+        Analyze this educational visual aid and provide:
+        1. A detailed description of the visual content
+        2. Assessment of its educational effectiveness
+        3. Suggestions for improvement
+        4. Potential teaching applications
+        5. Any errors or inaccuracies to correct
+        
+        Be specific and provide actionable feedback.
+        """
+        
+        response = generate_gemini_response(
+            [analysis_prompt, {"mime_type": image.content_type, "data": base64_image}],
+            model_type='vision'
+        )
+        
+        return {
+            "analysis": response.text,
+            "image_type": image.content_type,
+            "size_bytes": len(contents)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Visual aid analysis failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to analyze visual aid"
+        )
 
 @app.get("/visual-aids/suggestions", response_model=Dict[str, Any])
 async def get_visual_aid_suggestions():
-    """Get visual aid suggestions by subject"""
+    """Get visual aid suggestions by subject with example prompts"""
     suggestions = {
-        "science": [
-            "Human digestive system for grade 4",
-            "Plant parts and functions diagram",
-            "Food chain in forest ecosystem",
-            "Water cycle with simple labels",
-            "Types of weather conditions",
-        ],
-        "math": [
-            "Fraction comparison chart",
-            "Multiplication table visual",
-            "Geometric shapes and properties",
-            "Number line for addition",
-            "Clock reading practice chart",
-        ],
-        "social": [
-            "Indian map with states",
-            "Timeline of Indian freedom struggle",
-            "Community helpers chart",
-            "Types of transportation",
-            "Family tree template",
-        ],
-        "language": [
-            "Parts of speech chart",
-            "Vowels and consonants diagram",
-            "Story sequence template",
-            "Rhyming words visualization",
-            "Sentence structure diagram",
-        ]
+        "science": {
+            "examples": [
+                "Human digestive system for grade 4",
+                "Plant parts and functions diagram",
+                "Food chain in forest ecosystem"
+            ],
+            "prompt_templates": [
+                "Create a labeled diagram of {concept} for {grade} students",
+                "Design an illustration showing {process} with clear steps",
+                "Make a comparison chart between {concept1} and {concept2}"
+            ]
+        },
+        "math": {
+            "examples": [
+                "Fraction comparison chart",
+                "Multiplication table visual",
+                "Geometric shapes and properties"
+            ],
+            "prompt_templates": [
+                "Visualize {math_concept} using {visual_type} for {grade}",
+                "Create a diagram showing {process} with examples",
+                "Design a chart that helps students understand {concept}"
+            ]
+        },
+        "social": {
+            "examples": [
+                "Indian map with states",
+                "Timeline of Indian freedom struggle",
+                "Community helpers chart"
+            ],
+            "prompt_templates": [
+                "Create a {type} showing {historical_event} for {grade}",
+                "Design a visual timeline of {period}",
+                "Make a chart comparing {concept1} and {concept2}"
+            ]
+        },
+        "language": {
+            "examples": [
+                "Parts of speech chart",
+                "Vowels and consonants diagram",
+                "Story sequence template"
+            ],
+            "prompt_templates": [
+                "Create a {type} illustrating {language_concept}",
+                "Design a visual aid for teaching {grammar_rule}",
+                "Make a diagram showing {writing_structure}"
+            ]
+        }
     }
     return suggestions
 
